@@ -1,0 +1,32 @@
+{
+  "name": "workspace-service",
+  "version": "0.1.0",
+  "description": "Remote development sidecar — connects local workspace to a remote tools-service backend via WebSocket",
+  "type": "module",
+  "bin": {
+    "workspace-service": "./bin/workspace-service.js"
+  },
+  "main": "src/AgentClient.js",
+  "scripts": {
+    "start": "node bin/workspace-service.js",
+    "dev": "node --watch bin/workspace-service.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"**/*.js\"",
+    "format:check": "prettier --check \"**/*.js\""
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "commander": "^14.0.0",
+    "diff": "^8.0.4",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.4.0",
+    "prettier": "^3.8.1"
+  }
+}
