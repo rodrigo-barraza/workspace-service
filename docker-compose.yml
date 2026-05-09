@@ -12,6 +12,7 @@ services:
       - WORKSPACE_BACKEND=ws://192.168.86.2:5590
       - WORKSPACE_ROOTS=/workspace
     volumes:
+      - /volume1/docker:/workspace:ro
       - /usr/share/zoneinfo/America/Los_Angeles:/etc/localtime:ro
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "-O", "/dev/null", "http://localhost:5605/health"]
