@@ -33,7 +33,9 @@ export function startHealthServer(agent, port = DEFAULT_PORT) {
         timestamp: new Date().toISOString(),
       };
 
-      const statusCode = agent.connected ? 200 : 503;
+      // Always 200 — the service is alive and reconnecting is a normal transient state.
+      // Docker healthcheck would otherwise restart the container while it waits for the backend.
+      const statusCode = 200;
       res.writeHead(statusCode, { "Content-Type": "application/json" });
       res.end(JSON.stringify(payload));
       return;

@@ -9,6 +9,8 @@ services:
       - .env
     environment:
       - TZ=America/Los_Angeles
+      - WORKSPACE_BACKEND=ws://192.168.86.2:5590
+      - WORKSPACE_ROOTS=/workspace
     volumes:
       - /usr/share/zoneinfo/America/Los_Angeles:/etc/localtime:ro
     healthcheck:
