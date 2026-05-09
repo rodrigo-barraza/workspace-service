@@ -10,6 +10,8 @@
   "scripts": {
     "start": "node bin/workspace-service.js",
     "dev": "node --watch bin/workspace-service.js",
+    "deploy": "bash deploy.sh",
+    "deploy:dry": "bash deploy.sh --dry-run",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.js\"",

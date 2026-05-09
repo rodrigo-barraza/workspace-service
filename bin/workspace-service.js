@@ -12,23 +12,46 @@ import { resolve } from "node:path";
 import { existsSync, statSync } from "node:fs";
 import { hostname } from "node:os";
 import { AgentClient } from "../src/AgentClient.js";
+import { startHealthServer } from "../src/health.js";
 import logger from "../src/logger.js";
 
 program
   .name("workspace-service")
   .description("Remote development sidecar — connects local workspace to a remote tools-service backend")
   .version("0.1.0")
-  .requiredOption("-b, --backend <url>", "WebSocket URL of tools-service (e.g. ws://192.168.86.2:5590)")
-  .requiredOption(
+  .option("-b, --backend <url>", "WebSocket URL of tools-service (or set WORKSPACE_BACKEND env var)")
+  .option(
     "-w, --workspace <paths...>",
-    "Local directory root(s) to expose (repeatable)",
+    "Local directory root(s) to expose (or set WORKSPACE_ROOTS env var, comma-separated)",
   )
   .option("-s, --secret <secret>", "API secret for authentication (or set WORKSPACE_SERVICE_SECRET env var)")
   .option("-n, --name <name>", "Human-readable name for this agent", hostname())
   .option("-r, --reconnect-interval <ms>", "Base reconnect delay in ms", "5000")
+  .option("-p, --health-port <port>", "Health endpoint port", "5605")
   .parse();
 
 const opts = program.opts();
+
+// ── Resolve backend (CLI flag → env var) ───────────────────────
+if (!opts.backend) {
+  opts.backend = process.env.WORKSPACE_BACKEND;
+}
+if (!opts.backend) {
+  logger.error("Missing --backend flag or WORKSPACE_BACKEND env var");
+  process.exit(1);
+}
+
+// ── Resolve workspace roots (CLI flag → env var) ───────────────
+if (!opts.workspace || opts.workspace.length === 0) {
+  const envRoots = process.env.WORKSPACE_ROOTS;
+  if (envRoots) {
+    opts.workspace = envRoots.split(",").map((s) => s.trim()).filter(Boolean);
+  }
+}
+if (!opts.workspace || opts.workspace.length === 0) {
+  logger.error("Missing --workspace flag or WORKSPACE_ROOTS env var");
+  process.exit(1);
+}
 
 // ── Validate workspace paths ───────────────────────────────────
 const roots = opts.workspace.map((p) => resolve(p));
@@ -59,6 +82,7 @@ if (!backendUrl.includes("/ws/agent")) {
 
 const secret = opts.secret || process.env.WORKSPACE_SERVICE_SECRET || "";
 const reconnectInterval = parseInt(opts.reconnectInterval, 10) || 5000;
+const healthPort = parseInt(opts.healthPort, 10) || 5605;
 
 // ── Banner ─────────────────────────────────────────────────────
 console.log();
@@ -67,6 +91,7 @@ console.log(`     Name ............. ${opts.name}`);
 console.log(`     Backend .......... ${backendUrl}`);
 console.log(`     Workspaces ....... ${roots.join(", ")}`);
 console.log(`     Reconnect ........ ${reconnectInterval}ms`);
+console.log(`     Health ........... :${healthPort}/health`);
 console.log(`     Auth ............. ${secret ? "secret configured" : "none"}`);
 console.log();
 
@@ -81,6 +106,9 @@ const agent = new AgentClient({
 
 agent.connect();
 
+// ── Start health server ────────────────────────────────────────
+startHealthServer(agent, healthPort);
+
 // ── Graceful shutdown ──────────────────────────────────────────
 function shutdown(signal) {
   logger.info(`Received ${signal}, shutting down…`);
@@ -91,3 +119,4 @@ function shutdown(signal) {
 
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
+

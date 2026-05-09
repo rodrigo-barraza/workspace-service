@@ -1,0 +1,11 @@
+node_modules
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+*.log
+.DS_Store
+README.md
+.prettierrc
+eslint.config.js
