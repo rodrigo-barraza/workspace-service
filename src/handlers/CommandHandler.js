@@ -1,9 +1,4 @@
-// ============================================================
-// Command Handler — Sandboxed Local Command Execution
-// ============================================================
-// Mirrors AgenticCommandService — allowlisted commands,
-// CWD scoped to registered roots, subprocess with timeout.
-// ============================================================
+// ─── Sandboxed Local Command Execution ──────────────────────
 
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";

@@ -1,10 +1,4 @@
-// ============================================================
-// Workspace Service — Health Server
-// ============================================================
-// Minimal HTTP server for /health endpoint. Exposes connection
-// status so the portal and Docker healthcheck can monitor this
-// service alongside everything else.
-// ============================================================
+// ─── Health Server ──────────────────────────────────────────
 
 import { createServer } from "node:http";
 import logger from "./logger.js";

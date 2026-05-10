@@ -1,9 +1,4 @@
-// ============================================================
-// Project Handler — Directory Tree Analysis
-// ============================================================
-// Mirrors AgenticProjectService — generates a hierarchical
-// summary of a project directory.
-// ============================================================
+// ─── Directory Tree Analysis ────────────────────────────────
 
 import { readdir, stat } from "node:fs/promises";
 import { resolve, relative, basename } from "node:path";

@@ -1,16 +1,4 @@
-// ============================================================
-// Agent Client — WebSocket Connection + JSON-RPC Dispatch
-// ============================================================
-// Maintains a persistent WebSocket connection to tools-service.
-// On connect, registers this agent's workspace roots.
-// Dispatches incoming RPC requests to operation handlers.
-//
-// Features:
-//   - Auto-reconnect with exponential backoff
-//   - Heartbeat ping/pong (30s interval)
-//   - JSON-RPC 2.0 protocol
-//   - Graceful deregister on shutdown
-// ============================================================
+// ─── WebSocket Connection + JSON-RPC Dispatch ───────────────
 
 import WebSocket from "ws";
 import crypto from "node:crypto";

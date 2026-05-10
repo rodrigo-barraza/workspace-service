@@ -1,8 +1,4 @@
-// ============================================================
-// Git Handler — Local Git Operations
-// ============================================================
-// Mirrors AgenticGitService — status, diff, log via subprocess.
-// ============================================================
+// ─── Local Git Operations ───────────────────────────────────
 
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";

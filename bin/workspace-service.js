@@ -1,11 +1,5 @@
 #!/usr/bin/env node
-// ============================================================
-// Workspace Service — CLI Entry Point
-// ============================================================
-// Usage:
-//   workspace-service --backend ws://192.168.86.2:5590 --workspace /home/user/projects
-//   workspace-service -b ws://localhost:5590 -w /home/user/repo1 -w /home/user/repo2
-// ============================================================
+// ─── CLI Entry Point ────────────────────────────────────────
 
 import { program } from "commander";
 import { resolve } from "node:path";

@@ -1,11 +1,4 @@
-// ============================================================
-// File Handler — Local File System Operations
-// ============================================================
-// Mirrors the tools-service AgenticFileService API surface
-// but executes locally on the agent's machine.
-//
-// Security: all paths validated against registered roots.
-// ============================================================
+// ─── Local File System Operations ───────────────────────────
 
 import { readFile, writeFile, stat, readdir, mkdir, rename, unlink } from "node:fs/promises";
 import { resolve, relative, extname, dirname } from "node:path";
