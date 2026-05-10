@@ -38,7 +38,8 @@ COPY . .
 # Non-root user for security
 RUN groupadd --system --gid 1001 workspace && \
     useradd --system --uid 1001 --gid workspace workspace && \
-    chown -R workspace:workspace /app
+    mkdir -p /workspace && \
+    chown -R workspace:workspace /app /workspace
 USER workspace
 
 EXPOSE 5605
