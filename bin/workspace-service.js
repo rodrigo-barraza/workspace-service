@@ -79,15 +79,13 @@ const reconnectInterval = parseInt(opts.reconnectInterval, 10) || 5000;
 const healthPort = parseInt(opts.healthPort, 10) || 5605;
 
 // ── Banner ─────────────────────────────────────────────────────
-console.log();
-console.log("  🔌 Workspace Service");
-console.log(`     Name ............. ${opts.name}`);
-console.log(`     Backend .......... ${backendUrl}`);
-console.log(`     Workspaces ....... ${roots.join(", ")}`);
-console.log(`     Reconnect ........ ${reconnectInterval}ms`);
-console.log(`     Health ........... :${healthPort}/health`);
-console.log(`     Auth ............. ${secret ? "secret configured" : "none"}`);
-console.log();
+logger.info("Workspace Service");
+logger.info(`Name ............. ${opts.name}`);
+logger.info(`Backend .......... ${backendUrl}`);
+logger.info(`Workspaces ....... ${roots.join(", ")}`);
+logger.info(`Reconnect ........ ${reconnectInterval}ms`);
+logger.info(`Health ........... :${healthPort}/health`);
+logger.info(`Auth ............. ${secret ? "secret configured" : "none"}`);
 
 // ── Start agent ────────────────────────────────────────────────
 const agent = new AgentClient({
