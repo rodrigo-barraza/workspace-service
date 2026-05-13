@@ -1,8 +1,8 @@
 // ─── Directory Tree Analysis ────────────────────────────────
 
 import { readdir, stat } from "node:fs/promises";
-import { resolve, relative, basename } from "node:path";
-import logger from "../logger.js";
+import { resolve, basename } from "node:path";
+import { PathJail } from "../PathJail.js";
 
 const MAX_TREE_ENTRIES = 1000;
 const MAX_DEPTH = 6;
@@ -15,21 +15,11 @@ const SKIP_DIRS = new Set([
 
 export class ProjectHandler {
   constructor(roots) {
-    this.roots = roots.map((r) => resolve(r));
+    this.jail = new PathJail(roots);
   }
 
   validatePath(inputPath) {
-    if (!inputPath || typeof inputPath !== "string") {
-      return { safe: false, resolved: "", error: "Path is required" };
-    }
-    const resolved = resolve(inputPath);
-    const inRoot = this.roots.some(
-      (root) => resolved.startsWith(root + "/") || resolved === root,
-    );
-    if (!inRoot) {
-      return { safe: false, resolved, error: `Path '${resolved}' is outside allowed roots` };
-    }
-    return { safe: true, resolved };
+    return this.jail.contains(inputPath);
   }
 
   async summary({ path: projectPath, maxDepth = MAX_DEPTH }) {

@@ -3,7 +3,8 @@
 import { readFile, writeFile, stat, readdir, mkdir, rename, unlink } from "node:fs/promises";
 import { resolve, relative, extname, dirname } from "node:path";
 import { existsSync } from "node:fs";
-import logger from "../logger.js";
+import { PathJail } from "../PathJail.js";
+
 
 // ────────────────────────────────────────────────────────────
 // Constants (mirrored from AgenticFileService)
@@ -16,17 +17,7 @@ const MAX_GREP_RESULTS = 50;
 const MAX_GLOB_RESULTS = 200;
 const MAX_DIR_ENTRIES = 500;
 
-const BLOCKED_PATTERNS = [
-  /node_modules\//,
-  /\.git\/objects\//,
-  /\.git\/hooks\//,
-  /\.env$/,
-  /\.env\..+$/,
-  /\.pem$/,
-  /\.key$/,
-  /id_rsa/,
-  /id_ed25519/,
-];
+
 
 const BINARY_EXTENSIONS = new Set([
   ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".svg",
@@ -61,47 +52,17 @@ export class FileHandler {
    * @param {string[]} roots - Allowed workspace root paths
    */
   constructor(roots) {
-    this.roots = roots.map((r) => resolve(r));
+    this.jail = new PathJail(roots);
   }
 
   /**
    * Validate a path against registered roots.
+   * Uses PathJail for realpath-based containment (follows symlinks).
    * @param {string} inputPath
    * @returns {{ safe: boolean, resolved: string, error?: string }}
    */
   validatePath(inputPath) {
-    if (!inputPath || typeof inputPath !== "string") {
-      return { safe: false, resolved: "", error: "Path is required (string)" };
-    }
-
-    const isRelative = !inputPath.startsWith("/");
-    const resolved = isRelative
-      ? resolve(this.roots[0], inputPath)
-      : resolve(inputPath);
-
-    const inAllowedRoot = this.roots.some(
-      (root) => resolved.startsWith(root + "/") || resolved === root,
-    );
-
-    if (!inAllowedRoot) {
-      return {
-        safe: false,
-        resolved,
-        error: `Path '${resolved}' is outside allowed roots: ${this.roots.join(", ")}`,
-      };
-    }
-
-    for (const pattern of BLOCKED_PATTERNS) {
-      if (pattern.test(resolved)) {
-        return {
-          safe: false,
-          resolved,
-          error: `Path '${resolved}' matches blocked pattern: ${pattern.source}`,
-        };
-      }
-    }
-
-    return { safe: true, resolved };
+    return this.jail.contains(inputPath);
   }
 
   // ──────────────────────────────────────────────────────────

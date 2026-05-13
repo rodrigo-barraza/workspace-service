@@ -23,8 +23,9 @@ RUN --mount=type=ssh npm ci --omit=dev
 FROM node:22-slim
 
 # Git is needed for agentic git operations on the workspace
+# Bubblewrap provides kernel-level filesystem isolation (mount namespaces)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git wget \
+    git wget bubblewrap \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

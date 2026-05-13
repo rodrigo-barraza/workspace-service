@@ -1,8 +1,8 @@
 // ─── Local Git Operations ───────────────────────────────────
 
 import { spawn } from "node:child_process";
-import { resolve } from "node:path";
-import logger from "../logger.js";
+import { PathJail } from "../PathJail.js";
+
 
 const GIT_TIMEOUT_MS = 10_000;
 const MAX_OUTPUT_BYTES = 512 * 1024;
@@ -87,21 +87,11 @@ async function runGit(args, cwd) {
 
 export class GitHandler {
   constructor(roots) {
-    this.roots = roots.map((r) => resolve(r));
+    this.jail = new PathJail(roots);
   }
 
   validatePath(inputPath) {
-    if (!inputPath || typeof inputPath !== "string") {
-      return { safe: false, resolved: "", error: "Path is required" };
-    }
-    const resolved = resolve(inputPath);
-    const inRoot = this.roots.some(
-      (root) => resolved.startsWith(root + "/") || resolved === root,
-    );
-    if (!inRoot) {
-      return { safe: false, resolved, error: `Path '${resolved}' is outside allowed roots` };
-    }
-    return { safe: true, resolved };
+    return this.jail.contains(inputPath);
   }
 
   async status({ path: repoPath }) {
