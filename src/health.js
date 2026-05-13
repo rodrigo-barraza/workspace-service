@@ -22,7 +22,6 @@ export function startHealthServer(agent, port = DEFAULT_PORT) {
         connected: agent.connected,
         backendUrl: agent.backendUrl,
         roots: agent.roots,
-        commandIsolation: agent.commandHandler?.isolationMode || "unknown",
         reconnectAttempts: agent.reconnectAttempts,
         uptime: process.uptime(),
         timestamp: new Date().toISOString(),

@@ -1,9 +1,14 @@
 # ============================================================
 # Workspace Service — Dockerfile (multi-stage)
 # ============================================================
-# Remote development sidecar — connects to a remote
-# tools-service backend via WebSocket, forwarding file,
-# shell, and git operations from the host workspace.
+# Self-contained development environment — connects to a
+# remote tools-service backend via WebSocket, forwarding
+# file, shell, and git operations from the host workspace.
+#
+# The container IS the isolation boundary (like WSL).
+# Users have full root access inside and can install
+# packages, modify system files, etc. — but nothing
+# escapes the container.
 # ============================================================
 
 # ── Stage 1: Install dependencies ─────────────────────────────
@@ -22,10 +27,14 @@ RUN --mount=type=ssh npm ci --omit=dev
 # ── Stage 2: Runtime ──────────────────────────────────────────
 FROM node:22-slim
 
-# Git is needed for agentic git operations on the workspace
-# Bubblewrap provides kernel-level filesystem isolation (mount namespaces)
+# Rich base environment — users can install more via apt
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git wget bubblewrap \
+    git wget curl \
+    python3 python3-pip python3-venv \
+    build-essential \
+    jq tree htop nano vim-tiny \
+    ca-certificates \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -36,12 +45,13 @@ COPY --from=deps /app/node_modules ./node_modules
 # Copy application source
 COPY . .
 
-# Non-root user for security
-RUN groupadd --system --gid 1001 workspace && \
-    useradd --system --uid 1001 --gid workspace workspace && \
-    mkdir -p /workspace && \
-    chown -R workspace:workspace /app /workspace
-USER workspace
+# Create workspace directory
+RUN mkdir -p /workspace
+
+# NOTE: Intentionally running as root.
+# The container IS the security boundary (like WSL).
+# Users have full root access inside their environment
+# but cannot escape the container.
 
 EXPOSE 5605
 
