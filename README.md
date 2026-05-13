@@ -89,3 +89,17 @@ Uses JSON-RPC 2.0 over WebSocket. The agent responds to the following RPC method
 - **Command allowlist**: Only project-safe commands (`npm`, `git`, `eslint`, etc.) are permitted
 - **Blocked patterns**: `.env`, private keys, `node_modules/.git/objects` are always blocked
 - **Auth**: WebSocket connection authenticates with `x-api-secret` header
+
+## Scripts
+
+```bash
+npm run start         # Start the workspace agent
+npm run dev           # Start with auto-reload (--watch)
+npm run lint          # Run ESLint
+npm run lint:fix      # Auto-fix lint issues
+npm run format        # Format with Prettier
+npm run format:check  # Check formatting
+npm run deploy        # Deploy to production
+npm run deploy:dry    # Validate deployment without deploying
+```
+
