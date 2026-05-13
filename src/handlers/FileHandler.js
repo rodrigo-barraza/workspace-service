@@ -3,7 +3,6 @@
 import { readFile, writeFile, stat, readdir, mkdir, rename, unlink } from "node:fs/promises";
 import { resolve, relative, extname, dirname } from "node:path";
 import { existsSync } from "node:fs";
-import { PathJail } from "../PathJail.js";
 
 
 // ────────────────────────────────────────────────────────────
@@ -49,20 +48,26 @@ function globToRegex(glob) {
 
 export class FileHandler {
   /**
-   * @param {string[]} roots - Allowed workspace root paths
+   * @param {string[]} roots - Workspace root paths
    */
   constructor(roots) {
-    this.jail = new PathJail(roots);
+    this.roots = roots.map((r) => resolve(r));
   }
 
   /**
-   * Validate a path against registered roots.
-   * Uses PathJail for realpath-based containment (follows symlinks).
+   * Validate and resolve a path.
+   * No containment check — the Docker container is the jail.
    * @param {string} inputPath
    * @returns {{ safe: boolean, resolved: string, error?: string }}
    */
   validatePath(inputPath) {
-    return this.jail.contains(inputPath);
+    if (!inputPath || typeof inputPath !== "string") {
+      return { safe: false, resolved: "", error: "Path is required (string)" };
+    }
+    const resolved = inputPath.startsWith("/")
+      ? resolve(inputPath)
+      : resolve(this.roots[0], inputPath);
+    return { safe: true, resolved };
   }
 
   // ──────────────────────────────────────────────────────────

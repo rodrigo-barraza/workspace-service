@@ -1,7 +1,7 @@
 // ─── Local Git Operations ───────────────────────────────────
 
 import { spawn } from "node:child_process";
-import { PathJail } from "../PathJail.js";
+import { resolve } from "node:path";
 
 
 const GIT_TIMEOUT_MS = 10_000;
@@ -87,11 +87,14 @@ async function runGit(args, cwd) {
 
 export class GitHandler {
   constructor(roots) {
-    this.jail = new PathJail(roots);
+    this.roots = roots.map((r) => resolve(r));
   }
 
   validatePath(inputPath) {
-    return this.jail.contains(inputPath);
+    if (!inputPath || typeof inputPath !== "string") {
+      return { safe: false, resolved: "", error: "Path is required" };
+    }
+    return { safe: true, resolved: resolve(inputPath) };
   }
 
   async status({ path: repoPath }) {

@@ -2,7 +2,6 @@
 
 import { readdir, stat } from "node:fs/promises";
 import { resolve, basename } from "node:path";
-import { PathJail } from "../PathJail.js";
 
 const MAX_TREE_ENTRIES = 1000;
 const MAX_DEPTH = 6;
@@ -15,11 +14,14 @@ const SKIP_DIRS = new Set([
 
 export class ProjectHandler {
   constructor(roots) {
-    this.jail = new PathJail(roots);
+    this.roots = roots.map((r) => resolve(r));
   }
 
   validatePath(inputPath) {
-    return this.jail.contains(inputPath);
+    if (!inputPath || typeof inputPath !== "string") {
+      return { safe: false, resolved: "", error: "Path is required" };
+    }
+    return { safe: true, resolved: resolve(inputPath) };
   }
 
   async summary({ path: projectPath, maxDepth = MAX_DEPTH }) {
