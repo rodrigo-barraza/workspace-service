@@ -74,7 +74,7 @@ export class FileHandler {
   // File Operations
   // ──────────────────────────────────────────────────────────
 
-  async readFile({ path: filePath, startLine, endLine }) {
+  async readFile({ path: filePath, startLine, endLine, raw: rawMode = false }) {
     const validation = this.validatePath(filePath);
     if (!validation.safe) return { error: validation.error };
 
@@ -92,7 +92,19 @@ export class FileHandler {
       }
 
       const ext = extname(resolved).toLowerCase();
+
+      // Binary file handling — return base64 in raw mode, metadata otherwise
       if (BINARY_EXTENSIONS.has(ext)) {
+        if (rawMode) {
+          const buffer = await readFile(resolved);
+          return {
+            filePath: resolved,
+            isBinary: true,
+            extension: ext,
+            sizeBytes: stats.size,
+            contentBase64: buffer.toString("base64"),
+          };
+        }
         return {
           filePath: resolved,
           isBinary: true,
@@ -102,8 +114,21 @@ export class FileHandler {
         };
       }
 
-      const raw = await readFile(resolved, "utf-8");
-      const allLines = raw.split("\n");
+      const rawContent = await readFile(resolved, "utf-8");
+
+      // Raw mode: return plain content without line numbers (for VS Code FileSystemProvider)
+      if (rawMode) {
+        return {
+          filePath: resolved,
+          totalLines: rawContent.split("\n").length,
+          totalBytes: stats.size,
+          content: rawContent,
+          lastModified: stats.mtime.toISOString(),
+        };
+      }
+
+      // Standard mode: line-numbered content with range support
+      const allLines = rawContent.split("\n");
       const totalLines = allLines.length;
 
       const start = startLine ? Math.max(1, startLine) : 1;
@@ -449,6 +474,28 @@ export class FileHandler {
   // ──────────────────────────────────────────────────────────
   // Directory Operations
   // ──────────────────────────────────────────────────────────
+
+  async createDirectory({ path: dirPath }) {
+    const validation = this.validatePath(dirPath);
+    if (!validation.safe) return { error: validation.error };
+
+    const resolved = validation.resolved;
+
+    try {
+      if (existsSync(resolved)) {
+        const stats = await stat(resolved);
+        if (stats.isDirectory()) {
+          return { path: resolved, created: false, message: "Directory already exists" };
+        }
+        return { error: `'${resolved}' exists and is not a directory` };
+      }
+
+      await mkdir(resolved, { recursive: true });
+      return { path: resolved, created: true };
+    } catch (err) {
+      return { error: `create_directory failed: ${err.message}` };
+    }
+  }
 
   async listDirectory({ path: dirPath, recursive = false, maxDepth = 3 }) {
     const validation = this.validatePath(dirPath);

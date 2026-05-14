@@ -2,6 +2,8 @@
 
 import WebSocket from "ws";
 import crypto from "node:crypto";
+import { watch } from "node:fs";
+import { resolve } from "node:path";
 import logger from "./logger.js";
 import { FileHandler } from "./handlers/FileHandler.js";
 import { GitHandler } from "./handlers/GitHandler.js";
@@ -15,6 +17,7 @@ import { ProjectHandler } from "./handlers/ProjectHandler.js";
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const HEARTBEAT_TIMEOUT_MS = 10_000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
+const WATCH_DEBOUNCE_MS = 300;
 
 // ────────────────────────────────────────────────────────────
 // Agent Client
@@ -45,6 +48,9 @@ export class AgentClient {
     this.heartbeatTimer = null;
     this.heartbeatTimeout = null;
 
+    /** @type {Map<string, { watcher: import('node:fs').FSWatcher, debounceTimer: NodeJS.Timeout|null }>} */
+    this.watchers = new Map();
+
     // Initialize handlers
     this.fileHandler = new FileHandler(roots);
     this.gitHandler = new GitHandler(roots);
@@ -66,6 +72,7 @@ export class AgentClient {
 
       // Directory operations
       ["directory.list", (p) => this.fileHandler.listDirectory(p)],
+      ["directory.create", (p) => this.fileHandler.createDirectory(p)],
 
       // Search operations
       ["search.grep", (p) => this.fileHandler.grepSearch(p)],
@@ -82,6 +89,10 @@ export class AgentClient {
 
       // Project intelligence
       ["project.summary", (p) => this.projectHandler.summary(p)],
+
+      // File watching (for VS Code FileSystemProvider)
+      ["watch.subscribe", (p) => this._watchPath(p)],
+      ["watch.unsubscribe", (p) => this._unwatchPath(p)],
     ]);
   }
 
@@ -151,6 +162,7 @@ export class AgentClient {
   disconnect() {
     this.intentionalClose = true;
     this._stopHeartbeat();
+    this._unwatchAll();
 
     if (this.ws && this.connected) {
       // Send deregister before closing
@@ -304,5 +316,87 @@ export class AgentClient {
         this.connect();
       }
     }, delay);
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // File Watching (for VS Code FileSystemProvider)
+  // ──────────────────────────────────────────────────────────
+
+  /**
+   * Subscribe to file-system changes on a path.
+   * Pushes `watch.changed` notifications over WebSocket on changes.
+   *
+   * @param {{ path: string, recursive?: boolean }} params
+   * @returns {{ watching: boolean, path: string }}
+   */
+  _watchPath({ path: watchPath, recursive = true }) {
+    if (!watchPath) return { error: "path is required" };
+
+    const resolved = resolve(watchPath);
+
+    // Already watching?
+    if (this.watchers.has(resolved)) {
+      return { watching: true, path: resolved, message: "Already watching" };
+    }
+
+    try {
+      const watcher = watch(resolved, { recursive }, (eventType, filename) => {
+        // Debounce rapid changes (e.g. editor save → tmp → rename)
+        const entry = this.watchers.get(resolved);
+        if (!entry) return;
+
+        if (entry.debounceTimer) clearTimeout(entry.debounceTimer);
+        entry.debounceTimer = setTimeout(() => {
+          entry.debounceTimer = null;
+          this._sendNotification("watch.changed", {
+            watchRoot: resolved,
+            eventType,                       // "rename" | "change"
+            filename: filename || null,       // relative path within watchRoot
+          });
+        }, WATCH_DEBOUNCE_MS);
+      });
+
+      watcher.on("error", (err) => {
+        logger.warn(`Watcher error on ${resolved}: ${err.message}`);
+        this._unwatchPath({ path: resolved });
+      });
+
+      this.watchers.set(resolved, { watcher, debounceTimer: null });
+      logger.info(`Watching: ${resolved} (recursive=${recursive})`);
+      return { watching: true, path: resolved };
+    } catch (err) {
+      return { error: `Failed to watch ${resolved}: ${err.message}` };
+    }
+  }
+
+  /**
+   * Unsubscribe from file-system changes.
+   * @param {{ path: string }} params
+   */
+  _unwatchPath({ path: watchPath }) {
+    if (!watchPath) return { error: "path is required" };
+
+    const resolved = resolve(watchPath);
+    const entry = this.watchers.get(resolved);
+    if (!entry) return { watching: false, path: resolved, message: "Not watching" };
+
+    if (entry.debounceTimer) clearTimeout(entry.debounceTimer);
+    entry.watcher.close();
+    this.watchers.delete(resolved);
+
+    logger.info(`Unwatched: ${resolved}`);
+    return { watching: false, path: resolved };
+  }
+
+  /**
+   * Close all active watchers (used during disconnect).
+   */
+  _unwatchAll() {
+    for (const [path, entry] of this.watchers) {
+      if (entry.debounceTimer) clearTimeout(entry.debounceTimer);
+      entry.watcher.close();
+      logger.debug(`Unwatched (shutdown): ${path}`);
+    }
+    this.watchers.clear();
   }
 }

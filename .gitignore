@@ -5,3 +5,9 @@ node_modules/
 .vscode/settings.json
 *.log
 .DS_Store
+secrets.js
+
+# VS Code Extension
+vscode-extension/out/
+vscode-extension/node_modules/
+vscode-extension/*.vsix

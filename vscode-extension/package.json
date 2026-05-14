@@ -1,0 +1,87 @@
+{
+  "name": "workspace-remote",
+  "displayName": "Workspace Remote",
+  "description": "Connect VS Code to remote workspaces served by workspace-service agents",
+  "version": "0.1.0",
+  "publisher": "rodrigo-barraza",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onFileSystem:workspace",
+    "onUri"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "workspace.connect",
+        "title": "Workspace Remote: Connect"
+      },
+      {
+        "command": "workspace.disconnect",
+        "title": "Workspace Remote: Disconnect"
+      },
+      {
+        "command": "workspace.searchFiles",
+        "title": "Workspace Remote: Search Files"
+      },
+      {
+        "command": "workspace.searchText",
+        "title": "Workspace Remote: Search Text (Grep)"
+      }
+    ],
+    "terminal": {
+      "profiles": [
+        {
+          "id": "workspace.remoteTerminal",
+          "title": "Workspace Remote",
+          "icon": "remote"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Workspace Remote",
+      "properties": {
+        "workspaceRemote.backendUrl": {
+          "type": "string",
+          "default": "",
+          "description": "WebSocket URL of the tools-service backend (e.g. ws://192.168.86.2:5590)"
+        },
+        "workspaceRemote.apiSecret": {
+          "type": "string",
+          "default": "",
+          "description": "API secret for authentication"
+        }
+      }
+    },
+    "menus": {
+      "commandPalette": [
+        { "command": "workspace.connect" },
+        { "command": "workspace.disconnect" },
+        { "command": "workspace.searchFiles" },
+        { "command": "workspace.searchText" }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "package": "npx -y @vscode/vsce package --no-dependencies",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.85.0",
+    "@types/ws": "^8.18.0",
+    "typescript": "^5.8.0"
+  },
+  "dependencies": {
+    "ws": "^8.20.0"
+  }
+}
