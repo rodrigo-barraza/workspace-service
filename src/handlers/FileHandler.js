@@ -28,6 +28,12 @@ const BINARY_EXTENSIONS = new Set([
   ".wasm", ".pyc", ".class",
 ]);
 
+// Image extensions eligible for inline base64 preview (avoids /file/raw round-trip)
+const PREVIEW_IMAGE_EXTENSIONS = new Set([
+  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".avif", ".tiff", ".tif",
+]);
+const MAX_PREVIEW_BYTES = 2_097_152; // 2 MB
+
 // ────────────────────────────────────────────────────────────
 // Path Validation
 // ────────────────────────────────────────────────────────────
@@ -93,9 +99,11 @@ export class FileHandler {
 
       const ext = extname(resolved).toLowerCase();
 
-      // Binary file handling — return base64 in raw mode, metadata otherwise
+      // Binary file handling — return base64 for raw mode or previewable images
       if (BINARY_EXTENSIONS.has(ext)) {
-        if (rawMode) {
+        const includeBase64 = rawMode || (PREVIEW_IMAGE_EXTENSIONS.has(ext) && stats.size <= MAX_PREVIEW_BYTES);
+
+        if (includeBase64) {
           const buffer = await readFile(resolved);
           return {
             filePath: resolved,
