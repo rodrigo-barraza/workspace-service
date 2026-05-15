@@ -13,11 +13,12 @@
   "engines": {
     "vscode": "^1.85.0"
   },
+  "extensionKind": ["ui"],
   "categories": [
     "Other"
   ],
   "activationEvents": [
-    "onFileSystem:workspace",
+    "onFileSystem:wsremote",
     "onUri"
   ],
   "main": "./out/extension.js",

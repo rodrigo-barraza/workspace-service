@@ -74,7 +74,7 @@ interface FileDeleteResult {
 // ────────────────────────────────────────────────────────────
 
 export class WorkspaceFileSystem implements vscode.FileSystemProvider {
-  static readonly scheme = "workspace";
+  static readonly scheme = "wsremote";
 
   private rpc: RpcClient;
 
@@ -83,6 +83,11 @@ export class WorkspaceFileSystem implements vscode.FileSystemProvider {
   readonly onDidChangeFile = this._onDidChangeFile.event;
 
   constructor(rpc: RpcClient) {
+    this.rpc = rpc;
+  }
+
+  /** Swap the underlying RPC client (e.g. after reconnect) */
+  setRpcClient(rpc: RpcClient): void {
     this.rpc = rpc;
   }
 

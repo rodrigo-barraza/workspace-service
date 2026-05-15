@@ -235,15 +235,10 @@ function _connect(
 
   rpcClient = new RpcClient(wsUrl, secret);
 
-  // Swap in the real RPC-backed filesystem provider
-  fileSystem = new WorkspaceFileSystem(rpcClient);
-  context.subscriptions.push(
-    vscode.workspace.registerFileSystemProvider(
-      WorkspaceFileSystem.scheme,
-      fileSystem,
-      { isCaseSensitive: true },
-    ),
-  );
+  // Swap the RPC client on the existing filesystem provider (registered once in activate())
+  if (fileSystem) {
+    fileSystem.setRpcClient(rpcClient);
+  }
 
   rpcClient.connect({
     onConnected: () => {
