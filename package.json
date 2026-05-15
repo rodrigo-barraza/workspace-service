@@ -10,12 +10,15 @@
   "scripts": {
     "start": "node bin/workspace-service.js",
     "dev": "node --watch bin/workspace-service.js",
+    "dev:local": "set -a && . ./.env && set +a && node --watch bin/workspace-service.js",
     "deploy": "bash deploy.sh",
     "deploy:dry": "bash deploy.sh --dry-run",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.js\"",
-    "format:check": "prettier --check \"**/*.js\""
+    "format:check": "prettier --check \"**/*.js\"",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest"
   },
   "author": "",
   "license": "ISC",
@@ -30,6 +33,7 @@
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.6.0",
-    "prettier": "^3.8.3"
+    "prettier": "^3.8.3",
+    "vitest": "^4.1.6"
   }
 }

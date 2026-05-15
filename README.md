@@ -38,22 +38,67 @@ node bin/workspace-service.js \
 
 If you're developing on a local machine (e.g. WSL2, Linux, macOS), you can run workspace-service directly with Node — no Docker required. This gives you native filesystem performance and full access to your local toolchain (git, npm, eslint, etc.).
 
+### 1. Install dependencies
+
 ```bash
-# Install dependencies (one time)
 cd ~/development/workspace-service
 npm install
+```
 
-# Run with CLI flags
-node bin/workspace-service.js \
-  --backend ws://192.168.86.2:5590 \
-  --workspace /home/you/development \
-  --secret your-agent-secret
+### 2. Create your `.env`
 
-# Or run with env vars + auto-reload on file changes
+```bash
+cp .env.example .env
+```
+
+Edit `.env` with your values:
+
+```env
+WORKSPACE_BACKEND=ws://192.168.86.2:5590
+WORKSPACE_ROOTS=/home/you/development
+WORKSPACE_SERVICE_SECRET=your-agent-secret
+```
+
+### 3. Start the service
+
+```bash
+# Recommended — loads .env automatically with file-watch reload
+npm run dev:local
+```
+
+You should see output like:
+
+```
+[18:31:22] INFO  [workspace] Workspace Service
+[18:31:22] INFO  [workspace] Name ............. YOUR-HOSTNAME
+[18:31:22] INFO  [workspace] Backend .......... ws://192.168.86.2:5590/ws/agent
+[18:31:22] INFO  [workspace] Workspaces ....... /home/you/development
+[18:31:22] INFO  [workspace] Reconnect ........ 5000ms
+[18:31:22] INFO  [workspace] Health ........... :5605/health
+[18:31:22] INFO  [workspace] Auth ............. secret configured
+[18:31:22] OK    [workspace] Connected to ws://192.168.86.2:5590/ws/agent
+[18:31:22] INFO  [workspace] Registered agent "YOUR-HOSTNAME" with 1 root(s)
+[18:31:22] OK    [workspace] Server confirmed registration
+```
+
+### Alternative: inline env vars
+
+If you prefer not to create a `.env` file, you can pass env vars inline:
+
+```bash
 WORKSPACE_BACKEND=ws://192.168.86.2:5590 \
 WORKSPACE_ROOTS=/home/you/development \
 WORKSPACE_SERVICE_SECRET=your-secret \
 npm run dev
+```
+
+### Alternative: CLI flags
+
+```bash
+node bin/workspace-service.js \
+  --backend ws://192.168.86.2:5590 \
+  --workspace /home/you/development \
+  --secret your-agent-secret
 ```
 
 > **Tip:** You can run multiple workspace-service instances simultaneously (e.g. one on a NAS, one in WSL). Each registers with a unique `agentId` and the tools-service routes operations to whichever agent owns the requested path.
@@ -79,10 +124,12 @@ npm run dev
 
 ## Environment Variables
 
-```bash
-WORKSPACE_SERVICE_SECRET=your-api-secret  # Alternative to --secret flag
-DEBUG=1                                   # Enable debug logging
-```
+| Variable | Description |
+|---|---|
+| `WORKSPACE_BACKEND` | WebSocket URL of the tools-service backend (auto-converts `http://` → `ws://`) |
+| `WORKSPACE_ROOTS` | Comma-separated workspace root directories to expose |
+| `WORKSPACE_SERVICE_SECRET` | API secret for authenticating with tools-service |
+| `DEBUG` | Set to `1` to enable debug logging |
 
 ## Protocol
 
@@ -128,6 +175,7 @@ Uses JSON-RPC 2.0 over WebSocket. The agent responds to the following RPC method
 ```bash
 npm run start         # Start the workspace agent
 npm run dev           # Start with auto-reload (--watch)
+npm run dev:local     # Start with auto-reload, loading .env automatically
 npm run lint          # Run ESLint
 npm run lint:fix      # Auto-fix lint issues
 npm run format        # Format with Prettier
