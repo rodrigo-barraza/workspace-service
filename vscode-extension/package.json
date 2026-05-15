@@ -5,6 +5,11 @@
   "version": "0.1.0",
   "publisher": "rodrigo-barraza",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rodrigo-barraza/workspace-service",
+    "directory": "vscode-extension"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
