@@ -71,11 +71,11 @@ async function runGit(args, cwd) {
       res({ stdout, stderr: stderr.trim() });
     });
 
-    child.on("error", (err) => {
+    child.on("error", (processError) => {
       if (!settled) {
         settled = true;
         clearTimeout(timer);
-        res({ error: `Git process error: ${err.message}` });
+        res({ error: `Git process error: ${processError.message}` });
       }
     });
   });
@@ -126,15 +126,15 @@ export class GitHandler {
     const untracked = [];
 
     for (const line of fileLines) {
-      const x = line[0];
-      const y = line[1];
+      const indexStatus = line[0];
+      const workTreeStatus = line[1];
       const file = line.slice(3);
 
-      if (x === "?" && y === "?") {
+      if (indexStatus === "?" && workTreeStatus === "?") {
         untracked.push(file);
       } else {
-        if (x !== " " && x !== "?") staged.push({ status: x, file });
-        if (y !== " " && y !== "?") unstaged.push({ status: y, file });
+        if (indexStatus !== " " && indexStatus !== "?") staged.push({ status: indexStatus, file });
+        if (workTreeStatus !== " " && workTreeStatus !== "?") unstaged.push({ status: workTreeStatus, file });
       }
     }
 

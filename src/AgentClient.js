@@ -123,8 +123,8 @@ export class AgentClient {
         try {
           const msg = JSON.parse(raw.toString());
           this._handleMessage(msg);
-        } catch (err) {
-          logger.error(`Failed to parse message: ${err.message}`);
+        } catch (error) {
+          logger.error(`Failed to parse message: ${error.message}`);
         }
       });
 
@@ -143,18 +143,18 @@ export class AgentClient {
         }
       });
 
-      this.ws.on("error", (err) => {
+      this.ws.on("error", (wsError) => {
         // Suppress ECONNREFUSED spam during reconnect — the close event will handle retry
-        if (err.code === "ECONNREFUSED") {
+        if (wsError.code === "ECONNREFUSED") {
           if (this.reconnectAttempts <= 1) {
             logger.error(`Connection refused: ${this.backendUrl}`);
           }
         } else {
-          logger.error(`WebSocket error: ${err.message}`);
+          logger.error(`WebSocket error: ${wsError.message}`);
         }
       });
-    } catch (err) {
-      logger.error(`Failed to connect: ${err.message}`);
+    } catch (error) {
+      logger.error(`Failed to connect: ${error.message}`);
       this._scheduleReconnect();
     }
   }
@@ -229,11 +229,11 @@ export class AgentClient {
       try {
         const result = await handler(msg.params || {});
         this._sendResponse(msg.id, result);
-      } catch (err) {
-        logger.error(`Handler error (${msg.method}): ${err.message}`);
+      } catch (error) {
+        logger.error(`Handler error (${msg.method}): ${error.message}`);
         this._sendResponse(msg.id, null, {
           code: -32000,
-          message: err.message,
+          message: error.message,
         });
       }
       return;
@@ -356,16 +356,16 @@ export class AgentClient {
         }, WATCH_DEBOUNCE_MS);
       });
 
-      watcher.on("error", (err) => {
-        logger.warn(`Watcher error on ${resolved}: ${err.message}`);
+      watcher.on("error", (watchError) => {
+        logger.warn(`Watcher error on ${resolved}: ${watchError.message}`);
         this._unwatchPath({ path: resolved });
       });
 
       this.watchers.set(resolved, { watcher, debounceTimer: null });
       logger.info(`Watching: ${resolved} (recursive=${recursive})`);
       return { watching: true, path: resolved };
-    } catch (err) {
-      return { error: `Failed to watch ${resolved}: ${err.message}` };
+    } catch (error) {
+      return { error: `Failed to watch ${resolved}: ${error.message}` };
     }
   }
 

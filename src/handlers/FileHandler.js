@@ -3,6 +3,7 @@
 import { readFile, writeFile, stat, readdir, mkdir, rename, unlink } from "node:fs/promises";
 import { resolve, relative, extname, dirname } from "node:path";
 import { existsSync } from "node:fs";
+import { escapeRegex } from "@rodrigo-barraza/utilities-library";
 
 
 // ────────────────────────────────────────────────────────────
@@ -38,9 +39,7 @@ const MAX_PREVIEW_BYTES = 2_097_152; // 2 MB
 // Path Validation
 // ────────────────────────────────────────────────────────────
 
-function escapeRegex(str) {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+
 
 function globToRegex(glob) {
   const regex = glob
@@ -160,9 +159,9 @@ export class FileHandler {
         truncated: end < totalLines,
         content: numberedContent,
       };
-    } catch (err) {
-      if (err.code === "ENOENT") return { error: `File not found: ${resolved}` };
-      return { error: `Read failed: ${err.message}` };
+    } catch (error) {
+      if (error.code === "ENOENT") return { error: `File not found: ${resolved}` };
+      return { error: `Read failed: ${error.message}` };
     }
   }
 
@@ -199,8 +198,8 @@ export class FileHandler {
         bytesWritten: bytes,
         linesWritten: lines,
       };
-    } catch (err) {
-      return { error: `Write failed: ${err.message}` };
+    } catch (error) {
+      return { error: `Write failed: ${error.message}` };
     }
   }
 
@@ -262,9 +261,9 @@ export class FileHandler {
         newLines,
         lineDelta: newLines - oldLines,
       };
-    } catch (err) {
-      if (err.code === "ENOENT") return { error: `File not found: ${resolved}` };
-      return { error: `str_replace failed: ${err.message}` };
+    } catch (error) {
+      if (error.code === "ENOENT") return { error: `File not found: ${resolved}` };
+      return { error: `str_replace failed: ${error.message}` };
     }
   }
 
@@ -302,9 +301,9 @@ export class FileHandler {
         newLines,
         lineDelta: newLines - oldLines,
       };
-    } catch (err) {
-      if (err.code === "ENOENT") return { error: `File not found: ${resolved}` };
-      return { error: `patch_file failed: ${err.message}` };
+    } catch (error) {
+      if (error.code === "ENOENT") return { error: `File not found: ${resolved}` };
+      return { error: `patch_file failed: ${error.message}` };
     }
   }
 
@@ -347,9 +346,9 @@ export class FileHandler {
           }
 
           return info;
-        } catch (err) {
-          if (err.code === "ENOENT") return { path: resolved, exists: false };
-          return { path: resolved, exists: false, error: err.message };
+        } catch (error) {
+          if (error.code === "ENOENT") return { path: resolved, exists: false };
+          return { path: resolved, exists: false, error: error.message };
         }
       }),
     );
@@ -398,9 +397,9 @@ export class FileHandler {
         deletions,
         diff: hasChanges ? diff : "(files are identical)",
       };
-    } catch (err) {
-      if (err.code === "ENOENT") return { error: `File not found: ${err.path || pathA}` };
-      return { error: `file_diff failed: ${err.message}` };
+    } catch (error) {
+      if (error.code === "ENOENT") return { error: `File not found: ${err.path || pathA}` };
+      return { error: `file_diff failed: ${error.message}` };
     }
   }
 
@@ -429,8 +428,8 @@ export class FileHandler {
         destination: validDst.resolved,
         success: true,
       };
-    } catch (err) {
-      return { error: `move_file failed: ${err.message}` };
+    } catch (error) {
+      return { error: `move_file failed: ${error.message}` };
     }
   }
 
@@ -448,9 +447,9 @@ export class FileHandler {
       await unlink(validation.resolved);
 
       return { filePath: validation.resolved, deleted: true, sizeBytes };
-    } catch (err) {
-      if (err.code === "ENOENT") return { error: `File not found: ${validation.resolved}` };
-      return { error: `delete_file failed: ${err.message}` };
+    } catch (error) {
+      if (error.code === "ENOENT") return { error: `File not found: ${validation.resolved}` };
+      return { error: `delete_file failed: ${error.message}` };
     }
   }
 
@@ -500,8 +499,8 @@ export class FileHandler {
 
       await mkdir(resolved, { recursive: true });
       return { path: resolved, created: true };
-    } catch (err) {
-      return { error: `create_directory failed: ${err.message}` };
+    } catch (error) {
+      return { error: `create_directory failed: ${error.message}` };
     }
   }
 
@@ -558,9 +557,9 @@ export class FileHandler {
         truncated: entries.length >= MAX_DIR_ENTRIES,
         entries,
       };
-    } catch (err) {
-      if (err.code === "ENOENT") return { error: `Directory not found: ${resolved}` };
-      return { error: `list_directory failed: ${err.message}` };
+    } catch (error) {
+      if (error.code === "ENOENT") return { error: `Directory not found: ${resolved}` };
+      return { error: `list_directory failed: ${error.message}` };
     }
   }
 
@@ -584,8 +583,8 @@ export class FileHandler {
         regex = isRegex
           ? new RegExp(pattern, caseInsensitive ? "gi" : "g")
           : new RegExp(escapeRegex(pattern), caseInsensitive ? "gi" : "g");
-      } catch (err) {
-        return { error: `Invalid regex pattern: ${err.message}` };
+      } catch (error) {
+        return { error: `Invalid regex pattern: ${error.message}` };
       }
 
       const results = [];
@@ -673,8 +672,8 @@ export class FileHandler {
         truncated: results.length >= MAX_GREP_RESULTS,
         results,
       };
-    } catch (err) {
-      return { error: `grep_search failed: ${err.message}` };
+    } catch (error) {
+      return { error: `grep_search failed: ${error.message}` };
     }
   }
 
@@ -732,8 +731,8 @@ export class FileHandler {
         truncated: matches.length >= MAX_GLOB_RESULTS,
         matches,
       };
-    } catch (err) {
-      return { error: `glob_files failed: ${err.message}` };
+    } catch (error) {
+      return { error: `glob_files failed: ${error.message}` };
     }
   }
 }

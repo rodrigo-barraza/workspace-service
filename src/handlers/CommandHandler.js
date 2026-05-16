@@ -97,14 +97,14 @@ export class CommandHandler {
       }
 
       child.on("close", (code) => finish(code));
-      child.on("error", (err) => {
+      child.on("error", (processError) => {
         if (!settled) {
           settled = true;
           clearTimeout(timer);
           res({
             success: false, stdout: "", stderr: "", exitCode: null,
             executionTimeMs: Math.round(performance.now() - startTime),
-            error: `Process error: ${err.message}`,
+            error: `Process error: ${processError.message}`,
           });
         }
       });
@@ -186,14 +186,14 @@ export class CommandHandler {
       }
 
       child.on("close", (code) => finish(code));
-      child.on("error", (err) => {
+      child.on("error", (processError) => {
         if (!settled) {
           settled = true;
           clearTimeout(timer);
           res({
             success: false, stdout: "", stderr: "", exitCode: null,
             executionTimeMs: Math.round(performance.now() - startTime),
-            error: `Process error: ${err.message}`,
+            error: `Process error: ${processError.message}`,
           });
         }
       });
