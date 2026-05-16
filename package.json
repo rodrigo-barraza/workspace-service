@@ -8,8 +8,8 @@
   },
   "main": "src/AgentClient.js",
   "scripts": {
-    "start": "node bin/workspace-service.js",
-    "dev": "node --watch bin/workspace-service.js",
+    "start": "node boot.js",
+    "dev": "node --watch boot.js",
     "dev:local": "set -a && . ./.env && set +a && node --watch bin/workspace-service.js",
     "deploy": "bash deploy.sh",
     "deploy:dry": "bash deploy.sh --dry-run",
