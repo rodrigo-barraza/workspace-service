@@ -45,18 +45,13 @@ cd ~/development/workspace-service
 npm install
 ```
 
-### 2. Create your `.env`
+### 2. Configure (optional)
 
-```bash
-cp .env.example .env
-```
-
-Edit `.env` with your values:
+Secrets are resolved from vault-service automatically. If you need local
+overrides (e.g. a different `WORKSPACE_ROOTS`), create a `.env`:
 
 ```env
-WORKSPACE_BACKEND=ws://192.168.86.2:5590
 WORKSPACE_ROOTS=/home/you/development
-WORKSPACE_SERVICE_SECRET=your-agent-secret
 ```
 
 ### 3. Start the service
