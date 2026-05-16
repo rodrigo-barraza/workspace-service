@@ -9,8 +9,6 @@ services:
       - .env
     environment:
       - TZ=America/Los_Angeles
-      - VAULT_SERVICE_URL=${VAULT_SERVICE_URL}
-      - VAULT_SERVICE_TOKEN=${VAULT_SERVICE_TOKEN}
     volumes:
       - workspace-data:/workspace
       - /usr/share/zoneinfo/America/Los_Angeles:/etc/localtime:ro
