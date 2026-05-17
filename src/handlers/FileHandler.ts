@@ -50,6 +50,7 @@ function globToRegex(glob) {
 }
 
 export class FileHandler {
+  roots: string[];
   constructor(roots) {
     this.roots = roots.map((r) => resolve(r));
   }
@@ -322,7 +323,7 @@ export class FileHandler {
         try {
           const stats = await stat(resolved);
           const ext = extname(resolved).toLowerCase();
-          const info = {
+          const info: Record<string, any> = {
             path: resolved,
             exists: true,
             isFile: stats.isFile(),
@@ -393,7 +394,7 @@ export class FileHandler {
         diff: hasChanges ? diff : "(files are identical)",
       };
     } catch (error) {
-      if (error.code === "ENOENT") return { error: `File not found: ${err.path || pathA}` };
+      if ((error as any).code === "ENOENT") return { error: `File not found: ${(error as any).path || pathA}` };
       return { error: `file_diff failed: ${error.message}` };
     }
   }

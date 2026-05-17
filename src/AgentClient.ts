@@ -24,6 +24,24 @@ const WATCH_DEBOUNCE_MS = 300;
 // ────────────────────────────────────────────────────────────
 
 export class AgentClient {
+  backendUrl: string;
+  roots: string[];
+  name: string;
+  secret: string;
+  reconnectInterval: number;
+  agentId: string;
+  ws: WebSocket | null;
+  connected: boolean;
+  intentionalClose: boolean;
+  reconnectAttempts: number;
+  heartbeatTimer: ReturnType<typeof setInterval> | null;
+  heartbeatTimeout: ReturnType<typeof setTimeout> | null;
+  watchers: Map<string, { watcher: import("node:fs").FSWatcher; debounceTimer: ReturnType<typeof setTimeout> | null }>;
+  fileHandler: FileHandler;
+  gitHandler: GitHandler;
+  commandHandler: CommandHandler;
+  projectHandler: ProjectHandler;
+  methodMap: Map<string, (params: any) => any>;
   /**
 
    * @param {string} opts.backendUrl - WebSocket URL (e.g. ws://host:5590/ws/agent)
@@ -57,7 +75,6 @@ export class AgentClient {
     this.commandHandler = new CommandHandler(roots);
     this.projectHandler = new ProjectHandler(roots);
 
-    // Method → handler dispatch map
     this.methodMap = new Map([
       // File operations
       ["file.read", (p) => this.fileHandler.readFile(p)],
@@ -93,7 +110,7 @@ export class AgentClient {
       // File watching (for VS Code FileSystemProvider)
       ["watch.subscribe", (p) => this._watchPath(p)],
       ["watch.unsubscribe", (p) => this._unwatchPath(p)],
-    ]);
+    ] as any);
   }
 
   // ──────────────────────────────────────────────────────────
@@ -145,7 +162,7 @@ export class AgentClient {
 
       this.ws.on("error", (wsError) => {
         // Suppress ECONNREFUSED spam during reconnect — the close event will handle retry
-        if (wsError.code === "ECONNREFUSED") {
+        if ((wsError as any).code === "ECONNREFUSED") {
           if (this.reconnectAttempts <= 1) {
             logger.error(`Connection refused: ${this.backendUrl}`);
           }
@@ -228,7 +245,7 @@ export class AgentClient {
 
       try {
         const result = await handler(message.params || {});
-        this._sendResponse(message.id, result);
+        this._sendResponse(message.id, result, undefined);
       } catch (error) {
         logger.error(`Handler error (${message.method}): ${error.message}`);
         this._sendResponse(message.id, null, {
@@ -256,9 +273,9 @@ export class AgentClient {
     }
   }
 
-  _sendResponse(id, result, error) {
+  _sendResponse(id: any, result: any, error: any) {
     logger.rpc("out", error ? "error" : "result", id);
-    const message = { jsonrpc: "2.0", id };
+    const message: Record<string, any> = { jsonrpc: "2.0", id };
     if (error) {
       message.error = error;
     } else {

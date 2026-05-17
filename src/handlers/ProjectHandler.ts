@@ -13,6 +13,7 @@ const SKIP_DIRS = new Set([
 ]);
 
 export class ProjectHandler {
+  roots: string[];
   constructor(roots) {
     this.roots = roots.map((r) => resolve(r));
   }

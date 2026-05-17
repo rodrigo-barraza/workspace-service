@@ -18,6 +18,7 @@ const MAX_OUTPUT_BYTES = 512 * 1024;
 // ────────────────────────────────────────────────────────────
 
 export class CommandHandler {
+  roots: string[];
   constructor(roots) {
     this.roots = roots;
   }

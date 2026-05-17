@@ -11,7 +11,7 @@ const MAX_OUTPUT_BYTES = 512 * 1024;
 // Internal Git Runner
 // ────────────────────────────────────────────────────────────
 
-async function runGit(args, cwd) {
+async function runGit(args, cwd): Promise<Record<string, any>> {
   return new Promise((res) => {
     const stdoutChunks = [];
     const stderrChunks = [];
@@ -86,6 +86,7 @@ async function runGit(args, cwd) {
 // ────────────────────────────────────────────────────────────
 
 export class GitHandler {
+  roots: string[];
   constructor(roots) {
     this.roots = roots.map((r) => resolve(r));
   }
