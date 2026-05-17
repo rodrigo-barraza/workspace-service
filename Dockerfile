@@ -21,8 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY package.json package-lock.json ./
 
-RUN mkdir -p -m 0700 ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts
-RUN --mount=type=ssh npm ci --omit=dev
+RUN npm ci --omit=dev
 
 # ── Stage 2: Runtime ──────────────────────────────────────────
 FROM node:22-slim
