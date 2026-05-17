@@ -11,3 +11,7 @@ secrets.js
 vscode-extension/out/
 vscode-extension/node_modules/
 vscode-extension/*.vsix
+
+# TypeScript build artifacts
+dist/
+*.tsbuildinfo
