@@ -21,9 +21,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY package.json package-lock.json ./
 
-RUN npm ci --omit=dev
+RUN npm ci
 
-# ── Stage 2: Runtime ──────────────────────────────────────────
+
+# ── Stage 2: Build TypeScript ─────────────────────────────────
+FROM deps AS build
+WORKDIR /app
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/package.json ./package.json
+RUN npm run build
+# Prune devDependencies for the runtime image
+RUN npm prune --omit=dev
+
+# ── Stage 3: Runtime ──────────────────────────────────────────
 FROM node:22-slim
 
 # Rich base environment — users can install more via apt
@@ -39,7 +49,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy pre-built node_modules from deps stage
-COPY --from=deps /app/node_modules ./node_modules
+COPY --from=build /app/node_modules ./node_modules
 
 # Copy application source
 COPY . .
@@ -57,4 +67,4 @@ EXPOSE 5605
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget --no-verbose --tries=1 -O /dev/null http://127.0.0.1:5605/health || exit 1
 
-CMD ["node", "boot.ts"]
+CMD ["node", "dist/boot.js"]
