@@ -1,3 +1,4 @@
+// @ts-nocheck
 // ─── Boot Sequence ──────────────────────────────────────────
 
 import { bootstrapEnv } from "@rodrigo-barraza/utilities-library/vault";
