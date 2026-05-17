@@ -1,18 +1,13 @@
 import js from "@eslint/js";
+import tseslint from "typescript-eslint";
+import prettierConfig from "eslint-config-prettier";
 import globals from "globals";
+import { createServiceEslintConfig } from "@rodrigo-barraza/utilities-library/eslint";
 
 export default [
-  js.configs.recommended,
+  ...createServiceEslintConfig({ js, tseslint, prettierConfig, globals }),
   {
-    languageOptions: {
-      ecmaVersion: "latest",
-      sourceType: "module",
-      globals: {
-        ...globals.node,
-      },
-    },
     rules: {
-      "no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
       "no-constant-condition": "off",
     },
   },

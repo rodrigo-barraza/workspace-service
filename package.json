@@ -6,11 +6,11 @@
   "bin": {
     "workspace-service": "./dist/bin/workspace-service.js"
   },
-  "main": "dist/src/AgentClient.js",
+  "main": "dist/AgentClient.js",
   "scripts": {
     "start": "node dist/boot.js",
-    "dev": "tsx watch boot.ts",
-    "dev:local": "set -a && . ./.env && set +a && tsx watch bin/workspace-service.ts",
+    "dev": "tsx watch src/boot.ts",
+    "dev:local": "set -a && . ./.env && set +a && tsx watch src/bin/workspace-service.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "deploy": "bash deploy.sh",
@@ -41,6 +41,7 @@
     "prettier": "^3.8.3",
     "tsx": "^4.22.0",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.33.0",
     "vitest": "^4.1.6"
   }
 }
