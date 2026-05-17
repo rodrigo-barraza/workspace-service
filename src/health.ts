@@ -1,3 +1,4 @@
+// @ts-nocheck
 // ─── Health Server ──────────────────────────────────────────
 
 import { createServer } from "node:http";

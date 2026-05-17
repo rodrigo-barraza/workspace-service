@@ -1,3 +1,4 @@
+// @ts-nocheck
 // ─── Container-Jailed Command Execution ─────────────────────
 // The Docker container IS the isolation boundary (like WSL).
 // Users have full root access inside — any command, any path.

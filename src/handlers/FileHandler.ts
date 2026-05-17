@@ -1,3 +1,4 @@
+// @ts-nocheck
 // ─── Local File System Operations ───────────────────────────
 
 import { readFile, writeFile, stat, readdir, mkdir, rename, unlink } from "node:fs/promises";

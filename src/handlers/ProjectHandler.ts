@@ -1,3 +1,4 @@
+// @ts-nocheck
 // ─── Directory Tree Analysis ────────────────────────────────
 
 import { readdir, stat } from "node:fs/promises";

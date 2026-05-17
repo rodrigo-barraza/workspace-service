@@ -4,19 +4,21 @@
   "description": "Remote development sidecar — connects local workspace to a remote tools-service backend via WebSocket",
   "type": "module",
   "bin": {
-    "workspace-service": "./bin/workspace-service.js"
+    "workspace-service": "./dist/bin/workspace-service.js"
   },
-  "main": "src/AgentClient.js",
+  "main": "dist/src/AgentClient.js",
   "scripts": {
-    "start": "node boot.js",
-    "dev": "node --watch boot.js",
-    "dev:local": "set -a && . ./.env && set +a && node --watch bin/workspace-service.js",
+    "start": "node dist/boot.js",
+    "dev": "tsx watch boot.ts",
+    "dev:local": "set -a && . ./.env && set +a && tsx watch bin/workspace-service.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
     "deploy": "bash deploy.sh",
     "deploy:dry": "bash deploy.sh --dry-run",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "format": "prettier --write \"**/*.js\"",
-    "format:check": "prettier --check \"**/*.js\"",
+    "format": "prettier --write \"**/*.ts\"",
+    "format:check": "prettier --check \"**/*.ts\"",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest"
   },
@@ -30,10 +32,15 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@types/diff": "^7.0.2",
+    "@types/node": "^25.8.0",
+    "@types/ws": "^8.18.1",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.6.0",
     "prettier": "^3.8.3",
+    "tsx": "^4.22.0",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.6"
   }
 }

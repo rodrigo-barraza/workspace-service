@@ -1,3 +1,4 @@
+// @ts-nocheck
 // ─── Local Git Operations ───────────────────────────────────
 
 import { spawn } from "node:child_process";

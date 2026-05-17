@@ -1,3 +1,4 @@
+// @ts-nocheck
 // ─── WebSocket Connection + JSON-RPC Dispatch ───────────────
 
 import WebSocket from "ws";
