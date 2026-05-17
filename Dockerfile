@@ -27,8 +27,7 @@ RUN npm ci
 # ── Stage 2: Build TypeScript ─────────────────────────────────
 FROM deps AS build
 WORKDIR /app
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/package.json ./package.json
+COPY . .
 RUN npm run build
 # Prune devDependencies for the runtime image
 RUN npm prune --omit=dev
@@ -51,8 +50,9 @@ WORKDIR /app
 # Copy pre-built node_modules from deps stage
 COPY --from=build /app/node_modules ./node_modules
 
-# Copy application source
-COPY . .
+# Copy compiled application
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/package.json ./package.json
 
 # Create workspace directory
 RUN mkdir -p /workspace
