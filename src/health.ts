@@ -1,4 +1,3 @@
-// @ts-nocheck
 // ─── Health Server ──────────────────────────────────────────
 
 import { createServer } from "node:http";
@@ -8,9 +7,8 @@ const DEFAULT_PORT = 5605;
 
 /**
  * Start a lightweight health HTTP server.
- * @param {import("./AgentClient.js").AgentClient} agent
- * @param {number} [port]
- * @returns {import("node:http").Server}
+
+
  */
 export function startHealthServer(agent, port = DEFAULT_PORT) {
   const server = createServer((req, res) => {

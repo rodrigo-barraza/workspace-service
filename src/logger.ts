@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createLogger } from "@rodrigo-barraza/utilities-library/node";
 
 const base = createLogger("workspace");

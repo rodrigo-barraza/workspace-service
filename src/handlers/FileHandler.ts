@@ -1,4 +1,3 @@
-// @ts-nocheck
 // ─── Local File System Operations ───────────────────────────
 
 import { readFile, writeFile, stat, readdir, mkdir, rename, unlink } from "node:fs/promises";
@@ -17,7 +16,6 @@ const MAX_LINES_PER_READ = 800;
 const MAX_GREP_RESULTS = 50;
 const MAX_GLOB_RESULTS = 200;
 const MAX_DIR_ENTRIES = 500;
-
 
 
 const BINARY_EXTENSIONS = new Set([
@@ -41,7 +39,6 @@ const MAX_PREVIEW_BYTES = 2_097_152; // 2 MB
 // ────────────────────────────────────────────────────────────
 
 
-
 function globToRegex(glob) {
   const regex = glob
     .replace(/[.+^${}()|[\]\\]/g, "\\$&")
@@ -53,9 +50,6 @@ function globToRegex(glob) {
 }
 
 export class FileHandler {
-  /**
-   * @param {string[]} roots - Workspace root paths
-   */
   constructor(roots) {
     this.roots = roots.map((r) => resolve(r));
   }
@@ -63,7 +57,7 @@ export class FileHandler {
   /**
    * Validate and resolve a path.
    * No containment check — the Docker container is the jail.
-   * @param {string} inputPath
+
    * @returns {{ safe: boolean, resolved: string, error?: string }}
    */
   validatePath(inputPath) {

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // ─── Container-Jailed Command Execution ─────────────────────
 // The Docker container IS the isolation boundary (like WSL).
 // Users have full root access inside — any command, any path.
@@ -114,8 +113,8 @@ export class CommandHandler {
 
   /**
    * Streaming variant — sends chunked notifications during execution.
-   * @param {object} params - { command, cwd, timeout }
-   * @param {function} notify - (method, params) => void — sends RPC notifications back
+
+
    */
   async runStreaming({ command, cwd, timeout = DEFAULT_TIMEOUT_MS }, notify) {
     const clampedTimeout = Math.min(Math.max(timeout, 1000), MAX_TIMEOUT_MS);

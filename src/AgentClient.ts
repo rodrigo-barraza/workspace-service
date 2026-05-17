@@ -1,4 +1,3 @@
-// @ts-nocheck
 // ─── WebSocket Connection + JSON-RPC Dispatch ───────────────
 
 import WebSocket from "ws";
@@ -26,7 +25,7 @@ const WATCH_DEBOUNCE_MS = 300;
 
 export class AgentClient {
   /**
-   * @param {object} opts
+
    * @param {string} opts.backendUrl - WebSocket URL (e.g. ws://host:5590/ws/agent)
    * @param {string[]} opts.roots - Local workspace root paths
    * @param {string} opts.name - Human-readable agent name
@@ -41,7 +40,7 @@ export class AgentClient {
     this.reconnectInterval = reconnectInterval;
     this.agentId = crypto.randomUUID();
 
-    /** @type {WebSocket|null} */
+
     this.ws = null;
     this.connected = false;
     this.intentionalClose = false;
