@@ -221,8 +221,8 @@ export class FileHandler {
       const content = await readFile(resolved, "utf-8");
 
       let count = 0;
-      let idx = -1;
-      while ((idx = content.indexOf(oldStr, idx + 1)) !== -1) {
+      let index = -1;
+      while ((index = content.indexOf(oldStr, index + 1)) !== -1) {
         count++;
       }
 

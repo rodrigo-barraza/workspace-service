@@ -122,8 +122,8 @@ export class AgentClient {
 
       this.ws.on("message", (raw) => {
         try {
-          const msg = JSON.parse(raw.toString());
-          this._handleMessage(msg);
+          const message = JSON.parse(raw.toString());
+          this._handleMessage(message);
         } catch (error) {
           logger.error(`Failed to parse message: ${error.message}`);
         }
@@ -202,12 +202,12 @@ export class AgentClient {
   // Message Handling
   // ──────────────────────────────────────────────────────────
 
-  async _handleMessage(msg) {
+  async _handleMessage(message) {
     // Server acknowledgements / notifications (no id = notification)
-    if (!msg.id && msg.method) {
-      if (msg.method === "agent.registered") {
+    if (!message.id && message.method) {
+      if (message.method === "agent.registered") {
         logger.success(`Server confirmed registration`);
-      } else if (msg.method === "agent.ping") {
+      } else if (message.method === "agent.ping") {
         // Respond to application-level ping
         this._send({ jsonrpc: "2.0", method: "agent.pong", params: { agentId: this.agentId } });
       }
@@ -215,24 +215,24 @@ export class AgentClient {
     }
 
     // RPC request (has id + method)
-    if (msg.id && msg.method) {
-      logger.rpc("in", msg.method, msg.id);
+    if (message.id && message.method) {
+      logger.rpc("in", message.method, message.id);
 
-      const handler = this.methodMap.get(msg.method);
+      const handler = this.methodMap.get(message.method);
       if (!handler) {
-        this._sendResponse(msg.id, null, {
+        this._sendResponse(message.id, null, {
           code: -32601,
-          message: `Method not found: ${msg.method}`,
+          message: `Method not found: ${message.method}`,
         });
         return;
       }
 
       try {
-        const result = await handler(msg.params || {});
-        this._sendResponse(msg.id, result);
+        const result = await handler(message.params || {});
+        this._sendResponse(message.id, result);
       } catch (error) {
-        logger.error(`Handler error (${msg.method}): ${error.message}`);
-        this._sendResponse(msg.id, null, {
+        logger.error(`Handler error (${message.method}): ${error.message}`);
+        this._sendResponse(message.id, null, {
           code: -32000,
           message: error.message,
         });
@@ -241,8 +241,8 @@ export class AgentClient {
     }
 
     // RPC response (has id + result/error) — we don't currently send requests to the server
-    if (msg.id && (msg.result !== undefined || msg.error)) {
-      logger.debug(`Received response for ${msg.id}`);
+    if (message.id && (message.result !== undefined || message.error)) {
+      logger.debug(`Received response for ${message.id}`);
       return;
     }
   }
@@ -251,21 +251,21 @@ export class AgentClient {
   // Transport
   // ──────────────────────────────────────────────────────────
 
-  _send(msg) {
+  _send(message) {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(msg));
+      this.ws.send(JSON.stringify(message));
     }
   }
 
   _sendResponse(id, result, error) {
     logger.rpc("out", error ? "error" : "result", id);
-    const msg = { jsonrpc: "2.0", id };
+    const message = { jsonrpc: "2.0", id };
     if (error) {
-      msg.error = error;
+      message.error = error;
     } else {
-      msg.result = result;
+      message.result = result;
     }
-    this._send(msg);
+    this._send(message);
   }
 
   _sendNotification(method, params) {
