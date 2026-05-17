@@ -21,13 +21,13 @@ Your Machine                                Remote Backend
 npm install
 
 # Connect to a remote backend
-node bin/workspace-service.js \
+node dist/bin/workspace-service.js \
   --backend ws://192.168.86.2:5590 \
   --workspace /home/you/projects \
   --secret your-api-secret
 
 # Or with multiple workspaces
-node bin/workspace-service.js \
+node dist/bin/workspace-service.js \
   -b ws://your-nas:5590 \
   -w /home/you/project-a \
   -w /home/you/project-b \
@@ -90,7 +90,7 @@ npm run dev
 ### Alternative: CLI flags
 
 ```bash
-node bin/workspace-service.js \
+node dist/bin/workspace-service.js \
   --backend ws://192.168.86.2:5590 \
   --workspace /home/you/development \
   --secret your-agent-secret
