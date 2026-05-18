@@ -5,9 +5,9 @@ import { program } from "commander";
 import { resolve } from "node:path";
 import { existsSync, statSync } from "node:fs";
 import { hostname } from "node:os";
-import { AgentClient } from "../AgentClient.js";
-import { startHealthServer } from "../health.js";
-import logger from "../logger.js";
+import { AgentClient } from "../AgentClient.ts";
+import { startHealthServer } from "../health.ts";
+import logger from "../logger.ts";
 
 program
   .name("workspace-service")

@@ -4,11 +4,11 @@ import WebSocket from "ws";
 import crypto from "node:crypto";
 import { watch } from "node:fs";
 import { resolve } from "node:path";
-import logger from "./logger.js";
-import { FileHandler } from "./handlers/FileHandler.js";
-import { GitHandler } from "./handlers/GitHandler.js";
-import { CommandHandler } from "./handlers/CommandHandler.js";
-import { ProjectHandler } from "./handlers/ProjectHandler.js";
+import logger from "./logger.ts";
+import { FileHandler } from "./handlers/FileHandler.ts";
+import { GitHandler } from "./handlers/GitHandler.ts";
+import { CommandHandler } from "./handlers/CommandHandler.ts";
+import { ProjectHandler } from "./handlers/ProjectHandler.ts";
 
 // ────────────────────────────────────────────────────────────
 // Constants

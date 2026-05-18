@@ -1,7 +1,7 @@
 // ─── Health Server ──────────────────────────────────────────
 
 import { createServer } from "node:http";
-import logger from "./logger.js";
+import logger from "./logger.ts";
 
 const DEFAULT_PORT = 5605;
 
