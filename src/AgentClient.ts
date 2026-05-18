@@ -50,7 +50,7 @@ export class AgentClient {
    * @param {string} opts.secret - API secret for auth
    * @param {number} opts.reconnectInterval - Base reconnect delay (ms)
    */
-  constructor({ backendUrl, roots, name, secret, reconnectInterval = 5000 }) {
+  constructor({ backendUrl, roots, name, secret, reconnectInterval = 5000 }: any) {
     this.backendUrl = backendUrl;
     this.roots = roots;
     this.name = name;
@@ -77,39 +77,39 @@ export class AgentClient {
 
     this.methodMap = new Map([
       // File operations
-      ["file.read", (p) => this.fileHandler.readFile(p)],
-      ["file.write", (p) => this.fileHandler.writeFile(p)],
-      ["file.strReplace", (p) => this.fileHandler.strReplace(p)],
-      ["file.patch", (p) => this.fileHandler.patchFile(p)],
-      ["file.info", (p) => this.fileHandler.fileInfo(p)],
-      ["file.diff", (p) => this.fileHandler.fileDiff(p)],
-      ["file.move", (p) => this.fileHandler.moveFile(p)],
-      ["file.delete", (p) => this.fileHandler.deleteFile(p)],
-      ["file.readMulti", (p) => this.fileHandler.multiFileRead(p)],
+      ["file.read", (p: any) => this.fileHandler.readFile(p)],
+      ["file.write", (p: any) => this.fileHandler.writeFile(p)],
+      ["file.strReplace", (p: any) => this.fileHandler.strReplace(p)],
+      ["file.patch", (p: any) => this.fileHandler.patchFile(p)],
+      ["file.info", (p: any) => this.fileHandler.fileInfo(p)],
+      ["file.diff", (p: any) => this.fileHandler.fileDiff(p)],
+      ["file.move", (p: any) => this.fileHandler.moveFile(p)],
+      ["file.delete", (p: any) => this.fileHandler.deleteFile(p)],
+      ["file.readMulti", (p: any) => this.fileHandler.multiFileRead(p)],
 
       // Directory operations
-      ["directory.list", (p) => this.fileHandler.listDirectory(p)],
-      ["directory.create", (p) => this.fileHandler.createDirectory(p)],
+      ["directory.list", (p: any) => this.fileHandler.listDirectory(p)],
+      ["directory.create", (p: any) => this.fileHandler.createDirectory(p)],
 
       // Search operations
-      ["search.grep", (p) => this.fileHandler.grepSearch(p)],
-      ["search.glob", (p) => this.fileHandler.globFiles(p)],
+      ["search.grep", (p: any) => this.fileHandler.grepSearch(p)],
+      ["search.glob", (p: any) => this.fileHandler.globFiles(p)],
 
       // Git operations
-      ["git.status", (p) => this.gitHandler.status(p)],
-      ["git.diff", (p) => this.gitHandler.diff(p)],
-      ["git.log", (p) => this.gitHandler.log(p)],
+      ["git.status", (p: any) => this.gitHandler.status(p)],
+      ["git.diff", (p: any) => this.gitHandler.diff(p)],
+      ["git.log", (p: any) => this.gitHandler.log(p)],
 
       // Command execution
-      ["command.run", (p) => this.commandHandler.run(p)],
-      ["command.stream", (p) => this.commandHandler.runStreaming(p, (event, data) => this._sendNotification(event, data))],
+      ["command.run", (p: any) => this.commandHandler.run(p)],
+      ["command.stream", (p: any) => this.commandHandler.runStreaming(p, (event: any, data: any) => this._sendNotification(event, data))],
 
       // Project intelligence
-      ["project.summary", (p) => this.projectHandler.summary(p)],
+      ["project.summary", (p: any) => this.projectHandler.summary(p)],
 
       // File watching (for VS Code FileSystemProvider)
-      ["watch.subscribe", (p) => this._watchPath(p)],
-      ["watch.unsubscribe", (p) => this._unwatchPath(p)],
+      ["watch.subscribe", (p: any) => this._watchPath(p)],
+      ["watch.unsubscribe", (p: any) => this._unwatchPath(p)],
     ] as any);
   }
 
@@ -121,7 +121,7 @@ export class AgentClient {
     this.intentionalClose = false;
 
     try {
-      const headers = {};
+      const headers: Record<string, string> = {};
       if (this.secret) {
         headers["x-api-secret"] = this.secret;
       }
@@ -136,20 +136,20 @@ export class AgentClient {
         this._startHeartbeat();
       });
 
-      this.ws.on("message", (raw) => {
+      this.ws.on("message", (raw: any) => {
         try {
           const message = JSON.parse(raw.toString());
           this._handleMessage(message);
-        } catch (error) {
+        } catch (error: any) {
           logger.error(`Failed to parse message: ${error.message}`);
         }
       });
 
       this.ws.on("pong", () => {
-        clearTimeout(this.heartbeatTimeout);
+        if (this.heartbeatTimeout) clearTimeout(this.heartbeatTimeout);
       });
 
-      this.ws.on("close", (code, reason) => {
+      this.ws.on("close", (code: any, reason: any) => {
         this.connected = false;
         this._stopHeartbeat();
         const reasonStr = reason?.toString() || "";
@@ -160,7 +160,7 @@ export class AgentClient {
         }
       });
 
-      this.ws.on("error", (wsError) => {
+      this.ws.on("error", (wsError: any) => {
         // Suppress ECONNREFUSED spam during reconnect — the close event will handle retry
         if ((wsError as any).code === "ECONNREFUSED") {
           if (this.reconnectAttempts <= 1) {
@@ -170,7 +170,7 @@ export class AgentClient {
           logger.error(`WebSocket error: ${wsError.message}`);
         }
       });
-    } catch (error) {
+    } catch (error: any) {
       logger.error(`Failed to connect: ${error.message}`);
       this._scheduleReconnect();
     }
@@ -218,7 +218,7 @@ export class AgentClient {
   // Message Handling
   // ──────────────────────────────────────────────────────────
 
-  async _handleMessage(message) {
+  async _handleMessage(message: any) {
     // Server acknowledgements / notifications (no id = notification)
     if (!message.id && message.method) {
       if (message.method === "agent.registered") {
@@ -246,7 +246,7 @@ export class AgentClient {
       try {
         const result = await handler(message.params || {});
         this._sendResponse(message.id, result, undefined);
-      } catch (error) {
+      } catch (error: any) {
         logger.error(`Handler error (${message.method}): ${error.message}`);
         this._sendResponse(message.id, null, {
           code: -32000,
@@ -267,7 +267,7 @@ export class AgentClient {
   // Transport
   // ──────────────────────────────────────────────────────────
 
-  _send(message) {
+  _send(message: any) {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
     }
@@ -284,7 +284,7 @@ export class AgentClient {
     this._send(message);
   }
 
-  _sendNotification(method, params) {
+  _sendNotification(method: any, params: any) {
     this._send({ jsonrpc: "2.0", method, params });
   }
 
@@ -306,8 +306,8 @@ export class AgentClient {
   }
 
   _stopHeartbeat() {
-    clearInterval(this.heartbeatTimer);
-    clearTimeout(this.heartbeatTimeout);
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    if (this.heartbeatTimeout) clearTimeout(this.heartbeatTimeout);
     this.heartbeatTimer = null;
     this.heartbeatTimeout = null;
   }
@@ -346,7 +346,7 @@ export class AgentClient {
    * @param {{ path: string, recursive?: boolean }} params
    * @returns {{ watching: boolean, path: string }}
    */
-  _watchPath({ path: watchPath, recursive = true }) {
+  _watchPath({ path: watchPath, recursive = true }: any) {
     if (!watchPath) return { error: "path is required" };
 
     const resolved = resolve(watchPath);
@@ -357,7 +357,7 @@ export class AgentClient {
     }
 
     try {
-      const watcher = watch(resolved, { recursive }, (eventType, filename) => {
+      const watcher = watch(resolved, { recursive }, (eventType: any, filename: any) => {
         // Debounce rapid changes (e.g. editor save → tmp → rename)
         const entry = this.watchers.get(resolved);
         if (!entry) return;
@@ -373,7 +373,7 @@ export class AgentClient {
         }, WATCH_DEBOUNCE_MS);
       });
 
-      watcher.on("error", (watchError) => {
+      watcher.on("error", (watchError: any) => {
         logger.warn(`Watcher error on ${resolved}: ${watchError.message}`);
         this._unwatchPath({ path: resolved });
       });
@@ -381,7 +381,7 @@ export class AgentClient {
       this.watchers.set(resolved, { watcher, debounceTimer: null });
       logger.info(`Watching: ${resolved} (recursive=${recursive})`);
       return { watching: true, path: resolved };
-    } catch (error) {
+    } catch (error: any) {
       return { error: `Failed to watch ${resolved}: ${error.message}` };
     }
   }
@@ -390,7 +390,7 @@ export class AgentClient {
    * Unsubscribe from file-system changes.
    * @param {{ path: string }} params
    */
-  _unwatchPath({ path: watchPath }) {
+  _unwatchPath({ path: watchPath }: any) {
     if (!watchPath) return { error: "path is required" };
 
     const resolved = resolve(watchPath);

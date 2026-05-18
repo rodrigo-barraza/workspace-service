@@ -10,8 +10,8 @@ const DEFAULT_PORT = 5605;
 
 
  */
-export function startHealthServer(agent, port = DEFAULT_PORT) {
-  const server = createServer((req, res) => {
+export function startHealthServer(agent: any, port: any = DEFAULT_PORT) {
+  const server = createServer((req: any, res: any) => {
     if (req.method === "GET" && req.url === "/health") {
       const payload = {
         status: agent.connected ? "ok" : "disconnected",

@@ -19,7 +19,7 @@ const MAX_OUTPUT_BYTES = 512 * 1024;
 
 export class CommandHandler {
   roots: string[];
-  constructor(roots) {
+  constructor(roots: any) {
     this.roots = roots;
   }
 
@@ -27,7 +27,7 @@ export class CommandHandler {
    * Execute a command inside the container.
    * No restrictions — the container boundary is the jail.
    */
-  async run({ command, cwd, timeout = DEFAULT_TIMEOUT_MS }) {
+  async run({ command, cwd, timeout = DEFAULT_TIMEOUT_MS }: any) {
     const clampedTimeout = Math.min(Math.max(timeout, 1000), MAX_TIMEOUT_MS);
 
     if (!command || typeof command !== "string") {
@@ -36,9 +36,9 @@ export class CommandHandler {
 
     const startTime = performance.now();
 
-    return new Promise((res) => {
-      const stdoutChunks = [];
-      const stderrChunks = [];
+    return new Promise((res: any) => {
+      const stdoutChunks: any[] = [];
+      const stderrChunks: any[] = [];
       let stdoutLen = 0;
       let stderrLen = 0;
       let timedOut = false;
@@ -58,14 +58,14 @@ export class CommandHandler {
 
       child.stdin.end();
 
-      child.stdout.on("data", (chunk) => {
+      child.stdout.on("data", (chunk: any) => {
         if (stdoutLen < MAX_OUTPUT_BYTES) {
           stdoutChunks.push(chunk);
           stdoutLen += chunk.length;
         }
       });
 
-      child.stderr.on("data", (chunk) => {
+      child.stderr.on("data", (chunk: any) => {
         if (stderrLen < MAX_OUTPUT_BYTES) {
           stderrChunks.push(chunk);
           stderrLen += chunk.length;
@@ -77,7 +77,7 @@ export class CommandHandler {
         child.kill("SIGKILL");
       }, clampedTimeout);
 
-      function finish(exitCode) {
+      function finish(exitCode: any) {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
@@ -97,8 +97,8 @@ export class CommandHandler {
         });
       }
 
-      child.on("close", (code) => finish(code));
-      child.on("error", (processError) => {
+      child.on("close", (code: any) => finish(code));
+      child.on("error", (processError: any) => {
         if (!settled) {
           settled = true;
           clearTimeout(timer);
@@ -117,7 +117,7 @@ export class CommandHandler {
 
 
    */
-  async runStreaming({ command, cwd, timeout = DEFAULT_TIMEOUT_MS }, notify) {
+  async runStreaming({ command, cwd, timeout = DEFAULT_TIMEOUT_MS }: any, notify: any) {
     const clampedTimeout = Math.min(Math.max(timeout, 1000), MAX_TIMEOUT_MS);
 
     if (!command || typeof command !== "string") {
@@ -126,9 +126,9 @@ export class CommandHandler {
 
     const startTime = performance.now();
 
-    return new Promise((res) => {
-      const stdoutChunks = [];
-      const stderrChunks = [];
+    return new Promise((res: any) => {
+      const stdoutChunks: any[] = [];
+      const stderrChunks: any[] = [];
       let stdoutLen = 0;
       let stderrLen = 0;
       let timedOut = false;
@@ -148,7 +148,7 @@ export class CommandHandler {
 
       child.stdin.end();
 
-      child.stdout.on("data", (chunk) => {
+      child.stdout.on("data", (chunk: any) => {
         if (stdoutLen < MAX_OUTPUT_BYTES) {
           stdoutChunks.push(chunk);
           stdoutLen += chunk.length;
@@ -156,7 +156,7 @@ export class CommandHandler {
         }
       });
 
-      child.stderr.on("data", (chunk) => {
+      child.stderr.on("data", (chunk: any) => {
         if (stderrLen < MAX_OUTPUT_BYTES) {
           stderrChunks.push(chunk);
           stderrLen += chunk.length;
@@ -166,7 +166,7 @@ export class CommandHandler {
 
       const timer = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, clampedTimeout);
 
-      function finish(exitCode) {
+      function finish(exitCode: any) {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
@@ -186,8 +186,8 @@ export class CommandHandler {
         });
       }
 
-      child.on("close", (code) => finish(code));
-      child.on("error", (processError) => {
+      child.on("close", (code: any) => finish(code));
+      child.on("error", (processError: any) => {
         if (!settled) {
           settled = true;
           clearTimeout(timer);

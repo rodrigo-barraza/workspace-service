@@ -11,10 +11,10 @@ const MAX_OUTPUT_BYTES = 512 * 1024;
 // Internal Git Runner
 // ────────────────────────────────────────────────────────────
 
-async function runGit(args, cwd): Promise<Record<string, any>> {
-  return new Promise((res) => {
-    const stdoutChunks = [];
-    const stderrChunks = [];
+async function runGit(args: any, cwd: any): Promise<Record<string, any>> {
+  return new Promise((res: any) => {
+    const stdoutChunks: any[] = [];
+    const stderrChunks: any[] = [];
     let stdoutLen = 0;
     let stderrLen = 0;
     let settled = false;
@@ -33,14 +33,14 @@ async function runGit(args, cwd): Promise<Record<string, any>> {
 
     child.stdin.end();
 
-    child.stdout.on("data", (chunk) => {
+    child.stdout.on("data", (chunk: any) => {
       if (stdoutLen < MAX_OUTPUT_BYTES) {
         stdoutChunks.push(chunk);
         stdoutLen += chunk.length;
       }
     });
 
-    child.stderr.on("data", (chunk) => {
+    child.stderr.on("data", (chunk: any) => {
       if (stderrLen < MAX_OUTPUT_BYTES) {
         stderrChunks.push(chunk);
         stderrLen += chunk.length;
@@ -55,7 +55,7 @@ async function runGit(args, cwd): Promise<Record<string, any>> {
       }
     }, GIT_TIMEOUT_MS);
 
-    child.on("close", (code) => {
+    child.on("close", (code: any) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -71,7 +71,7 @@ async function runGit(args, cwd): Promise<Record<string, any>> {
       res({ stdout, stderr: stderr.trim() });
     });
 
-    child.on("error", (processError) => {
+    child.on("error", (processError: any) => {
       if (!settled) {
         settled = true;
         clearTimeout(timer);
@@ -87,18 +87,18 @@ async function runGit(args, cwd): Promise<Record<string, any>> {
 
 export class GitHandler {
   roots: string[];
-  constructor(roots) {
-    this.roots = roots.map((r) => resolve(r));
+  constructor(roots: any) {
+    this.roots = roots.map((r: any) => resolve(r));
   }
 
-  validatePath(inputPath) {
+  validatePath(inputPath: any) {
     if (!inputPath || typeof inputPath !== "string") {
       return { safe: false, resolved: "", error: "Path is required" };
     }
     return { safe: true, resolved: resolve(inputPath) };
   }
 
-  async status({ path: repoPath }) {
+  async status({ path: repoPath }: any) {
     const validation = this.validatePath(repoPath);
     if (!validation.safe) return { error: validation.error };
 
@@ -122,9 +122,9 @@ export class GitHandler {
     const aheadMatch = branchLine.match(/ahead (\d+)/);
     const behindMatch = branchLine.match(/behind (\d+)/);
 
-    const staged = [];
-    const unstaged = [];
-    const untracked = [];
+    const staged: any[] = [];
+    const unstaged: any[] = [];
+    const untracked: any[] = [];
 
     for (const line of fileLines) {
       const indexStatus = line[0];
@@ -152,7 +152,7 @@ export class GitHandler {
     };
   }
 
-  async diff({ path: repoPath, staged = false, filePath, ref }) {
+  async diff({ path: repoPath, staged = false, filePath, ref }: any) {
     const validation = this.validatePath(repoPath);
     if (!validation.safe) return { error: validation.error };
 
@@ -189,7 +189,7 @@ export class GitHandler {
     };
   }
 
-  async log({ path: repoPath, limit = 20, author, since, filePath }) {
+  async log({ path: repoPath, limit = 20, author, since, filePath }: any) {
     const validation = this.validatePath(repoPath);
     if (!validation.safe) return { error: validation.error };
 
@@ -214,8 +214,8 @@ export class GitHandler {
 
     const commits = result.stdout
       .split(separator)
-      .filter((s) => s.trim())
-      .map((entry) => {
+      .filter((s: any) => s.trim())
+      .map((entry: any) => {
         const parts = entry.trim().split("|");
         return {
           hash: parts[0] || "",

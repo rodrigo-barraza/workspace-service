@@ -5,7 +5,7 @@ const base = createLogger("workspace");
 // Extend with workspace-specific `rpc` method for LSP-like logging
 const logger = {
   ...base,
-  rpc: (direction, method, id) =>
+  rpc: (direction: any, method: any, id: any) =>
     base.info(
       `${direction === "in" ? "←" : "→"} ${method} (${id?.slice(0, 8) || "?"})`,
     ),

@@ -14,18 +14,18 @@ const SKIP_DIRS = new Set([
 
 export class ProjectHandler {
   roots: string[];
-  constructor(roots) {
-    this.roots = roots.map((r) => resolve(r));
+  constructor(roots: any) {
+    this.roots = roots.map((r: any) => resolve(r));
   }
 
-  validatePath(inputPath) {
+  validatePath(inputPath: any) {
     if (!inputPath || typeof inputPath !== "string") {
       return { safe: false, resolved: "", error: "Path is required" };
     }
     return { safe: true, resolved: resolve(inputPath) };
   }
 
-  async summary({ path: projectPath, maxDepth = MAX_DEPTH }) {
+  async summary({ path: projectPath, maxDepth = MAX_DEPTH }: any) {
     const validation = this.validatePath(projectPath);
     if (!validation.safe) return { error: validation.error };
 
@@ -34,17 +34,17 @@ export class ProjectHandler {
 
     let entryCount = 0;
 
-    const buildTree = async (dir, depth) => {
+    const buildTree = async (dir: any, depth: any) => {
       if (entryCount >= MAX_TREE_ENTRIES || depth > clampedDepth) {
         return [];
       }
 
       try {
         const entries = await readdir(dir, { withFileTypes: true });
-        const results = [];
+        const results: any[] = [];
 
         // Sort: directories first, then files
-        const sorted = entries.sort((a, b) => {
+        const sorted = entries.sort((a: any, b: any) => {
           if (a.isDirectory() && !b.isDirectory()) return -1;
           if (!a.isDirectory() && b.isDirectory()) return 1;
           return a.name.localeCompare(b.name);

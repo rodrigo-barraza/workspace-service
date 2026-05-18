@@ -39,7 +39,7 @@ if (!opts.backend) {
 if (!opts.workspace || opts.workspace.length === 0) {
   const envRoots = process.env.WORKSPACE_ROOTS;
   if (envRoots) {
-    opts.workspace = envRoots.split(",").map((s) => s.trim()).filter(Boolean);
+    opts.workspace = envRoots.split(",").map((s: any) => s.trim()).filter(Boolean);
   }
 }
 if (!opts.workspace || opts.workspace.length === 0) {
@@ -48,7 +48,7 @@ if (!opts.workspace || opts.workspace.length === 0) {
 }
 
 // ── Validate workspace paths ───────────────────────────────────
-const roots = opts.workspace.map((p) => resolve(p));
+const roots = opts.workspace.map((p: any) => resolve(p));
 for (const root of roots) {
   if (!existsSync(root)) {
     logger.error(`Workspace path does not exist: ${root}`);
@@ -102,7 +102,7 @@ agent.connect();
 startHealthServer(agent, healthPort);
 
 // ── Graceful shutdown ──────────────────────────────────────────
-function shutdown(signal) {
+function shutdown(signal: any) {
   logger.info(`Received ${signal}, shutting down…`);
   agent.disconnect();
   // Give the deregister message time to send
