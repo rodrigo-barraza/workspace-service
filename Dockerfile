@@ -12,7 +12,7 @@
 # ============================================================
 
 # ── Stage 1: Install dependencies ─────────────────────────────
-FROM node:22-slim AS deps
+FROM node:26-slim AS deps
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git openssh-client \
@@ -33,7 +33,7 @@ RUN npm run build
 RUN npm prune --omit=dev
 
 # ── Stage 3: Runtime ──────────────────────────────────────────
-FROM node:22-slim
+FROM node:26-slim
 
 # Rich base environment — users can install more via apt
 RUN apt-get update && apt-get install -y --no-install-recommends \
