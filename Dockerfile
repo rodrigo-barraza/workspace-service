@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY package.json package-lock.json ./
 
-RUN npm ci
+RUN --mount=type=ssh npm ci
 
 
 # ── Stage 2: Build TypeScript ─────────────────────────────────
