@@ -4,6 +4,13 @@ import { readFile, writeFile, stat, readdir, mkdir, rename, unlink } from "node:
 import { resolve, relative, extname, dirname } from "node:path";
 import { existsSync } from "node:fs";
 import { escapeRegex } from "@rodrigo-barraza/utilities-library";
+import type {
+  ReadFileParams, WriteFileParams, StrReplaceParams, PatchFileParams,
+  FileInfoParams, FileDiffParams, MoveFileParams, DeleteFileParams,
+  MultiFileReadParams, ListDirectoryParams, CreateDirectoryParams,
+  GrepSearchParams, GlobFilesParams,
+  PathValidation, FileInfoEntry, DirectoryEntry, GrepMatch, GlobMatch,
+} from "../types.ts";
 
 
 // ────────────────────────────────────────────────────────────
@@ -39,7 +46,7 @@ const MAX_PREVIEW_BYTES = 2_097_152; // 2 MB
 // ────────────────────────────────────────────────────────────
 
 
-function globToRegex(glob: any) {
+function globToRegex(glob: string) {
   const regex = glob
     .replace(/[.+^${}()|[\]\\]/g, "\\$&")
     .replace(/\*\*/g, "<<<GLOBSTAR>>>")
@@ -51,17 +58,15 @@ function globToRegex(glob: any) {
 
 export class FileHandler {
   roots: string[];
-  constructor(roots: any) {
-    this.roots = roots.map((r: any) => resolve(r));
+  constructor(roots: string[]) {
+    this.roots = roots.map((r: string) => resolve(r));
   }
 
   /**
    * Validate and resolve a path.
    * No containment check — the Docker container is the jail.
-
-   * @returns {{ safe: boolean, resolved: string, error?: string }}
    */
-  validatePath(inputPath: any) {
+  validatePath(inputPath: string): PathValidation {
     if (!inputPath || typeof inputPath !== "string") {
       return { safe: false, resolved: "", error: "Path is required (string)" };
     }
@@ -75,7 +80,7 @@ export class FileHandler {
   // File Operations
   // ──────────────────────────────────────────────────────────
 
-  async readFile({ path: filePath, startLine, endLine, raw: rawMode = false }: any) {
+  async readFile({ path: filePath, startLine, endLine, raw: rawMode = false }: ReadFileParams) {
     const validation = this.validatePath(filePath);
     if (!validation.safe) return { error: validation.error };
 
@@ -142,7 +147,7 @@ export class FileHandler {
 
       const selectedLines = allLines.slice(start - 1, end);
       const numberedContent = selectedLines
-        .map((line: any, i: any) => `${start + i}: ${line}`)
+        .map((line: string, i: number) => `${start + i}: ${line}`)
         .join("\n");
 
       return {
@@ -155,13 +160,14 @@ export class FileHandler {
         truncated: end < totalLines,
         content: numberedContent,
       };
-    } catch (error: any) {
-      if (error.code === "ENOENT") return { error: `File not found: ${resolved}` };
-      return { error: `Read failed: ${error.message}` };
+    } catch (error: unknown) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === "ENOENT") return { error: `File not found: ${resolved}` };
+      return { error: `Read failed: ${err.message}` };
     }
   }
 
-  async writeFile({ path: filePath, content, createDirs = true }: any) {
+  async writeFile({ path: filePath, content, createDirs = true }: WriteFileParams) {
     const validation = this.validatePath(filePath);
     if (!validation.safe) return { error: validation.error };
 
@@ -194,12 +200,12 @@ export class FileHandler {
         bytesWritten: bytes,
         linesWritten: lines,
       };
-    } catch (error: any) {
-      return { error: `Write failed: ${error.message}` };
+    } catch (error: unknown) {
+      return { error: `Write failed: ${(error as Error).message}` };
     }
   }
 
-  async strReplace({ path: filePath, oldStr, newStr, allowMultiple = false }: any) {
+  async strReplace({ path: filePath, oldStr, newStr, allowMultiple = false }: StrReplaceParams) {
     const validation = this.validatePath(filePath);
     if (!validation.safe) return { error: validation.error };
 
@@ -237,7 +243,7 @@ export class FileHandler {
         };
       }
 
-      let updated: any;
+      let updated: string;
       if (allowMultiple) {
         updated = content.split(oldStr).join(newStr);
       } else {
@@ -257,13 +263,14 @@ export class FileHandler {
         newLines,
         lineDelta: newLines - oldLines,
       };
-    } catch (error: any) {
-      if (error.code === "ENOENT") return { error: `File not found: ${resolved}` };
-      return { error: `str_replace failed: ${error.message}` };
+    } catch (error: unknown) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === "ENOENT") return { error: `File not found: ${resolved}` };
+      return { error: `str_replace failed: ${err.message}` };
     }
   }
 
-  async patchFile({ path: filePath, patch }: any) {
+  async patchFile({ path: filePath, patch }: PatchFileParams) {
     const validation = this.validatePath(filePath);
     if (!validation.safe) return { error: validation.error };
 
@@ -297,13 +304,14 @@ export class FileHandler {
         newLines,
         lineDelta: newLines - oldLines,
       };
-    } catch (error: any) {
-      if (error.code === "ENOENT") return { error: `File not found: ${resolved}` };
-      return { error: `patch_file failed: ${error.message}` };
+    } catch (error: unknown) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === "ENOENT") return { error: `File not found: ${resolved}` };
+      return { error: `patch_file failed: ${err.message}` };
     }
   }
 
-  async fileInfo({ paths }: any) {
+  async fileInfo({ paths }: FileInfoParams) {
     const pathList = Array.isArray(paths) ? paths : [paths];
     if (pathList.length === 0) {
       return { error: "'paths' must be a non-empty string or array of strings" };
@@ -313,7 +321,7 @@ export class FileHandler {
     }
 
     const results = await Promise.all(
-      pathList.map(async (p: any) => {
+      pathList.map(async (p: string): Promise<FileInfoEntry> => {
         const validation = this.validatePath(p);
         if (!validation.safe) {
           return { path: p, exists: false, error: validation.error };
@@ -323,7 +331,7 @@ export class FileHandler {
         try {
           const stats = await stat(resolved);
           const ext = extname(resolved).toLowerCase();
-          const info: Record<string, any> = {
+          const info: FileInfoEntry = {
             path: resolved,
             exists: true,
             isFile: stats.isFile(),
@@ -342,9 +350,10 @@ export class FileHandler {
           }
 
           return info;
-        } catch (error: any) {
-          if (error.code === "ENOENT") return { path: resolved, exists: false };
-          return { path: resolved, exists: false, error: error.message };
+        } catch (error: unknown) {
+          const err = error as NodeJS.ErrnoException;
+          if (err.code === "ENOENT") return { path: resolved, exists: false };
+          return { path: resolved, exists: false, error: err.message };
         }
       }),
     );
@@ -353,7 +362,7 @@ export class FileHandler {
     return { totalRequested: pathList.length, results };
   }
 
-  async fileDiff({ pathA, pathB, content, contextLines = 3 }: any) {
+  async fileDiff({ pathA, pathB, content, contextLines = 3 }: FileDiffParams) {
     if (!pathA) return { error: "'pathA' is required" };
     if (!pathB && content === undefined) return { error: "Either 'pathB' or 'content' must be provided" };
 
@@ -362,8 +371,8 @@ export class FileHandler {
 
     try {
       const contentA = await readFile(validA.resolved, "utf-8");
-      let contentB: any;
-      let labelB: any;
+      let contentB: string;
+      let labelB: string;
 
       if (pathB) {
         const validB = this.validatePath(pathB);
@@ -371,7 +380,7 @@ export class FileHandler {
         contentB = await readFile(validB.resolved, "utf-8");
         labelB = validB.resolved;
       } else {
-        contentB = content;
+        contentB = content!;
         labelB = "(provided content)";
       }
 
@@ -393,13 +402,14 @@ export class FileHandler {
         deletions,
         diff: hasChanges ? diff : "(files are identical)",
       };
-    } catch (error: any) {
-      if ((error as any).code === "ENOENT") return { error: `File not found: ${(error as any).path || pathA}` };
-      return { error: `file_diff failed: ${error.message}` };
+    } catch (error: unknown) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === "ENOENT") return { error: `File not found: ${err.path || pathA}` };
+      return { error: `file_diff failed: ${err.message}` };
     }
   }
 
-  async moveFile({ source, destination, createDirs = true }: any) {
+  async moveFile({ source, destination, createDirs = true }: MoveFileParams) {
     const validSrc = this.validatePath(source);
     if (!validSrc.safe) return { error: validSrc.error };
     const validDst = this.validatePath(destination);
@@ -424,12 +434,12 @@ export class FileHandler {
         destination: validDst.resolved,
         success: true,
       };
-    } catch (error: any) {
-      return { error: `move_file failed: ${error.message}` };
+    } catch (error: unknown) {
+      return { error: `move_file failed: ${(error as Error).message}` };
     }
   }
 
-  async deleteFile({ path: filePath }: any) {
+  async deleteFile({ path: filePath }: DeleteFileParams) {
     const validation = this.validatePath(filePath);
     if (!validation.safe) return { error: validation.error };
 
@@ -443,13 +453,14 @@ export class FileHandler {
       await unlink(validation.resolved);
 
       return { filePath: validation.resolved, deleted: true, sizeBytes };
-    } catch (error: any) {
-      if (error.code === "ENOENT") return { error: `File not found: ${validation.resolved}` };
-      return { error: `delete_file failed: ${error.message}` };
+    } catch (error: unknown) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === "ENOENT") return { error: `File not found: ${validation.resolved}` };
+      return { error: `delete_file failed: ${err.message}` };
     }
   }
 
-  async multiFileRead({ files }: any) {
+  async multiFileRead({ files }: MultiFileReadParams) {
     if (!Array.isArray(files) || files.length === 0) {
       return { error: "'files' must be a non-empty array of { path, startLine?, endLine? }" };
     }
@@ -458,7 +469,7 @@ export class FileHandler {
     }
 
     const results = await Promise.all(
-      files.map(async (f: any) => {
+      files.map(async (f: { path: string; startLine?: number; endLine?: number }) => {
         const result = await this.readFile({
           path: f.path,
           startLine: f.startLine,
@@ -468,8 +479,8 @@ export class FileHandler {
       }),
     );
 
-    const succeeded = results.filter((r: any) => !r.error).length;
-    const failed = results.filter((r: any) => r.error).length;
+    const succeeded = results.filter((r) => !("error" in r && r.error)).length;
+    const failed = results.filter((r) => "error" in r && r.error).length;
 
     return { totalRequested: files.length, succeeded, failed, results };
   }
@@ -478,7 +489,7 @@ export class FileHandler {
   // Directory Operations
   // ──────────────────────────────────────────────────────────
 
-  async createDirectory({ path: dirPath }: any) {
+  async createDirectory({ path: dirPath }: CreateDirectoryParams) {
     const validation = this.validatePath(dirPath);
     if (!validation.safe) return { error: validation.error };
 
@@ -495,12 +506,12 @@ export class FileHandler {
 
       await mkdir(resolved, { recursive: true });
       return { path: resolved, created: true };
-    } catch (error: any) {
-      return { error: `create_directory failed: ${error.message}` };
+    } catch (error: unknown) {
+      return { error: `create_directory failed: ${(error as Error).message}` };
     }
   }
 
-  async listDirectory({ path: dirPath, recursive = false, maxDepth = 3 }: any) {
+  async listDirectory({ path: dirPath, recursive = false, maxDepth = 3 }: ListDirectoryParams) {
     const validation = this.validatePath(dirPath);
     if (!validation.safe) return { error: validation.error };
 
@@ -512,9 +523,9 @@ export class FileHandler {
         return { error: `'${resolved}' is a file, not a directory. Use read_file instead.` };
       }
 
-      const entries: any[] = [];
+      const entries: DirectoryEntry[] = [];
 
-      const walk = async (dir: any, depth: any) => {
+      const walk = async (dir: string, depth: number) => {
         if (entries.length >= MAX_DIR_ENTRIES) return;
         if (depth > maxDepth) return;
 
@@ -553,9 +564,10 @@ export class FileHandler {
         truncated: entries.length >= MAX_DIR_ENTRIES,
         entries,
       };
-    } catch (error: any) {
-      if (error.code === "ENOENT") return { error: `Directory not found: ${resolved}` };
-      return { error: `list_directory failed: ${error.message}` };
+    } catch (error: unknown) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === "ENOENT") return { error: `Directory not found: ${resolved}` };
+      return { error: `list_directory failed: ${err.message}` };
     }
   }
 
@@ -563,7 +575,7 @@ export class FileHandler {
   // Search Operations
   // ──────────────────────────────────────────────────────────
 
-  async grepSearch({ pattern, searchPath, isRegex = false, includes = [], caseInsensitive = false, matchPerLine = true }: any) {
+  async grepSearch({ pattern, searchPath, isRegex = false, includes = [], caseInsensitive = false, matchPerLine = true }: GrepSearchParams) {
     const validation = this.validatePath(searchPath);
     if (!validation.safe) return { error: validation.error };
 
@@ -574,19 +586,19 @@ export class FileHandler {
     const resolved = validation.resolved;
 
     try {
-      let regex: any;
+      let regex: RegExp;
       try {
         regex = isRegex
           ? new RegExp(pattern, caseInsensitive ? "gi" : "g")
           : new RegExp(escapeRegex(pattern), caseInsensitive ? "gi" : "g");
-      } catch (error: any) {
-        return { error: `Invalid regex pattern: ${error.message}` };
+      } catch (error: unknown) {
+        return { error: `Invalid regex pattern: ${(error as Error).message}` };
       }
 
-      const results: any[] = [];
-      const fileMatches = new Set();
+      const results: GrepMatch[] = [];
+      const fileMatches = new Set<string>();
 
-      const searchFile = async (filePath: any) => {
+      const searchFile = async (filePath: string) => {
         if (results.length >= MAX_GREP_RESULTS) return;
         const ext = extname(filePath).toLowerCase();
         if (BINARY_EXTENSIONS.has(ext)) return;
@@ -618,7 +630,7 @@ export class FileHandler {
         } catch { /* skip unreadable */ }
       };
 
-      const walkDir = async (dir: any) => {
+      const walkDir = async (dir: string) => {
         if (results.length >= MAX_GREP_RESULTS) return;
         try {
           const entries = await readdir(dir, { withFileTypes: true });
@@ -632,7 +644,7 @@ export class FileHandler {
             } else {
               if (includes.length > 0) {
                 const name = entry.name;
-                const matched = includes.some((glob: any) => {
+                const matched = includes.some((glob: string) => {
                   if (glob.startsWith("*.")) return name.endsWith(glob.slice(1));
                   return name === glob;
                 });
@@ -668,12 +680,12 @@ export class FileHandler {
         truncated: results.length >= MAX_GREP_RESULTS,
         results,
       };
-    } catch (error: any) {
-      return { error: `grep_search failed: ${error.message}` };
+    } catch (error: unknown) {
+      return { error: `grep_search failed: ${(error as Error).message}` };
     }
   }
 
-  async globFiles({ pattern, searchPath }: any) {
+  async globFiles({ pattern, searchPath }: GlobFilesParams) {
     const validation = this.validatePath(searchPath);
     if (!validation.safe) return { error: validation.error };
 
@@ -682,10 +694,10 @@ export class FileHandler {
     }
 
     const resolved = validation.resolved;
-    const matches: any[] = [];
+    const matches: GlobMatch[] = [];
     const globRegex = globToRegex(pattern);
 
-    const walk = async (dir: any) => {
+    const walk = async (dir: string) => {
       if (matches.length >= MAX_GLOB_RESULTS) return;
       try {
         const entries = await readdir(dir, { withFileTypes: true });
@@ -727,8 +739,8 @@ export class FileHandler {
         truncated: matches.length >= MAX_GLOB_RESULTS,
         matches,
       };
-    } catch (error: any) {
-      return { error: `glob_files failed: ${error.message}` };
+    } catch (error: unknown) {
+      return { error: `glob_files failed: ${(error as Error).message}` };
     }
   }
 }

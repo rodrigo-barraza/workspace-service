@@ -1,5 +1,5 @@
 class Test {
-  [key: string]: any;
+  [key: string]: unknown;
   constructor() {
     this.hello = "world";
   }

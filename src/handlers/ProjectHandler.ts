@@ -2,6 +2,8 @@
 
 import { readdir, stat } from "node:fs/promises";
 import { resolve, basename } from "node:path";
+import type { Dirent } from "node:fs";
+import type { ProjectSummaryParams, PathValidation, TreeEntry } from "../types.ts";
 
 const MAX_TREE_ENTRIES = 1000;
 const MAX_DEPTH = 6;
@@ -14,18 +16,18 @@ const SKIP_DIRS = new Set([
 
 export class ProjectHandler {
   roots: string[];
-  constructor(roots: any) {
-    this.roots = roots.map((r: any) => resolve(r));
+  constructor(roots: string[]) {
+    this.roots = roots.map((r: string) => resolve(r));
   }
 
-  validatePath(inputPath: any) {
+  validatePath(inputPath: string): PathValidation {
     if (!inputPath || typeof inputPath !== "string") {
       return { safe: false, resolved: "", error: "Path is required" };
     }
     return { safe: true, resolved: resolve(inputPath) };
   }
 
-  async summary({ path: projectPath, maxDepth = MAX_DEPTH }: any) {
+  async summary({ path: projectPath, maxDepth = MAX_DEPTH }: ProjectSummaryParams) {
     const validation = this.validatePath(projectPath);
     if (!validation.safe) return { error: validation.error };
 
@@ -34,17 +36,17 @@ export class ProjectHandler {
 
     let entryCount = 0;
 
-    const buildTree = async (dir: any, depth: any) => {
+    const buildTree = async (dir: string, depth: number): Promise<TreeEntry[]> => {
       if (entryCount >= MAX_TREE_ENTRIES || depth > clampedDepth) {
         return [];
       }
 
       try {
         const entries = await readdir(dir, { withFileTypes: true });
-        const results: any[] = [];
+        const results: TreeEntry[] = [];
 
         // Sort: directories first, then files
-        const sorted = entries.sort((a: any, b: any) => {
+        const sorted = entries.sort((a: Dirent, b: Dirent) => {
           if (a.isDirectory() && !b.isDirectory()) return -1;
           if (!a.isDirectory() && b.isDirectory()) return 1;
           return a.name.localeCompare(b.name);

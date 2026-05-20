@@ -4,6 +4,7 @@
 // The container filesystem is the jail; nothing escapes it.
 
 import { spawn } from "node:child_process";
+import type { CommandRunParams, NotifyFn } from "../types.ts";
 
 // ────────────────────────────────────────────────────────────
 // Constants
@@ -14,12 +15,26 @@ const MAX_TIMEOUT_MS = 120_000;
 const MAX_OUTPUT_BYTES = 512 * 1024;
 
 // ────────────────────────────────────────────────────────────
+// Command Result
+// ────────────────────────────────────────────────────────────
+
+interface CommandResult {
+  success: boolean;
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+  executionTimeMs: number;
+  timedOut?: boolean;
+  error?: string;
+}
+
+// ────────────────────────────────────────────────────────────
 // Command Handler
 // ────────────────────────────────────────────────────────────
 
 export class CommandHandler {
   roots: string[];
-  constructor(roots: any) {
+  constructor(roots: string[]) {
     this.roots = roots;
   }
 
@@ -27,7 +42,7 @@ export class CommandHandler {
    * Execute a command inside the container.
    * No restrictions — the container boundary is the jail.
    */
-  async run({ command, cwd, timeout = DEFAULT_TIMEOUT_MS }: any) {
+  async run({ command, cwd, timeout = DEFAULT_TIMEOUT_MS }: CommandRunParams): Promise<CommandResult> {
     const clampedTimeout = Math.min(Math.max(timeout, 1000), MAX_TIMEOUT_MS);
 
     if (!command || typeof command !== "string") {
@@ -36,9 +51,9 @@ export class CommandHandler {
 
     const startTime = performance.now();
 
-    return new Promise((res: any) => {
-      const stdoutChunks: any[] = [];
-      const stderrChunks: any[] = [];
+    return new Promise((resolve: (value: CommandResult) => void) => {
+      const stdoutChunks: Buffer[] = [];
+      const stderrChunks: Buffer[] = [];
       let stdoutLen = 0;
       let stderrLen = 0;
       let timedOut = false;
@@ -58,14 +73,14 @@ export class CommandHandler {
 
       child.stdin.end();
 
-      child.stdout.on("data", (chunk: any) => {
+      child.stdout.on("data", (chunk: Buffer) => {
         if (stdoutLen < MAX_OUTPUT_BYTES) {
           stdoutChunks.push(chunk);
           stdoutLen += chunk.length;
         }
       });
 
-      child.stderr.on("data", (chunk: any) => {
+      child.stderr.on("data", (chunk: Buffer) => {
         if (stderrLen < MAX_OUTPUT_BYTES) {
           stderrChunks.push(chunk);
           stderrLen += chunk.length;
@@ -77,7 +92,7 @@ export class CommandHandler {
         child.kill("SIGKILL");
       }, clampedTimeout);
 
-      function finish(exitCode: any) {
+      function finish(exitCode: number | null) {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
@@ -86,7 +101,7 @@ export class CommandHandler {
         const stderr = Buffer.concat(stderrChunks).toString("utf-8");
         const executionTimeMs = Math.round(performance.now() - startTime);
 
-        res({
+        resolve({
           success: exitCode === 0 && !timedOut,
           stdout: stdoutLen > MAX_OUTPUT_BYTES ? stdout + "\n... [output truncated]" : stdout,
           stderr: stderrLen > MAX_OUTPUT_BYTES ? stderr + "\n... [output truncated]" : stderr,
@@ -97,12 +112,12 @@ export class CommandHandler {
         });
       }
 
-      child.on("close", (code: any) => finish(code));
-      child.on("error", (processError: any) => {
+      child.on("close", (code: number | null) => finish(code));
+      child.on("error", (processError: Error) => {
         if (!settled) {
           settled = true;
           clearTimeout(timer);
-          res({
+          resolve({
             success: false, stdout: "", stderr: "", exitCode: null,
             executionTimeMs: Math.round(performance.now() - startTime),
             error: `Process error: ${processError.message}`,
@@ -114,10 +129,8 @@ export class CommandHandler {
 
   /**
    * Streaming variant — sends chunked notifications during execution.
-
-
    */
-  async runStreaming({ command, cwd, timeout = DEFAULT_TIMEOUT_MS }: any, notify: any) {
+  async runStreaming({ command, cwd, timeout = DEFAULT_TIMEOUT_MS }: CommandRunParams, notify: NotifyFn): Promise<CommandResult> {
     const clampedTimeout = Math.min(Math.max(timeout, 1000), MAX_TIMEOUT_MS);
 
     if (!command || typeof command !== "string") {
@@ -126,9 +139,9 @@ export class CommandHandler {
 
     const startTime = performance.now();
 
-    return new Promise((res: any) => {
-      const stdoutChunks: any[] = [];
-      const stderrChunks: any[] = [];
+    return new Promise((resolve: (value: CommandResult) => void) => {
+      const stdoutChunks: Buffer[] = [];
+      const stderrChunks: Buffer[] = [];
       let stdoutLen = 0;
       let stderrLen = 0;
       let timedOut = false;
@@ -148,7 +161,7 @@ export class CommandHandler {
 
       child.stdin.end();
 
-      child.stdout.on("data", (chunk: any) => {
+      child.stdout.on("data", (chunk: Buffer) => {
         if (stdoutLen < MAX_OUTPUT_BYTES) {
           stdoutChunks.push(chunk);
           stdoutLen += chunk.length;
@@ -156,7 +169,7 @@ export class CommandHandler {
         }
       });
 
-      child.stderr.on("data", (chunk: any) => {
+      child.stderr.on("data", (chunk: Buffer) => {
         if (stderrLen < MAX_OUTPUT_BYTES) {
           stderrChunks.push(chunk);
           stderrLen += chunk.length;
@@ -166,7 +179,7 @@ export class CommandHandler {
 
       const timer = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, clampedTimeout);
 
-      function finish(exitCode: any) {
+      function finish(exitCode: number | null) {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
@@ -175,7 +188,7 @@ export class CommandHandler {
         const stderr = Buffer.concat(stderrChunks).toString("utf-8");
         const executionTimeMs = Math.round(performance.now() - startTime);
 
-        res({
+        resolve({
           success: exitCode === 0 && !timedOut,
           stdout: stdoutLen > MAX_OUTPUT_BYTES ? stdout + "\n... [output truncated]" : stdout,
           stderr: stderrLen > MAX_OUTPUT_BYTES ? stderr + "\n... [output truncated]" : stderr,
@@ -186,12 +199,12 @@ export class CommandHandler {
         });
       }
 
-      child.on("close", (code: any) => finish(code));
-      child.on("error", (processError: any) => {
+      child.on("close", (code: number | null) => finish(code));
+      child.on("error", (processError: Error) => {
         if (!settled) {
           settled = true;
           clearTimeout(timer);
-          res({
+          resolve({
             success: false, stdout: "", stderr: "", exitCode: null,
             executionTimeMs: Math.round(performance.now() - startTime),
             error: `Process error: ${processError.message}`,

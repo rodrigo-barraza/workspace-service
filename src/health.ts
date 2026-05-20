@@ -1,17 +1,16 @@
 // ─── Health Server ──────────────────────────────────────────
 
-import { createServer } from "node:http";
+import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import logger from "./logger.ts";
+import type { AgentClient } from "./AgentClient.ts";
 
 const DEFAULT_PORT = 5605;
 
 /**
  * Start a lightweight health HTTP server.
-
-
  */
-export function startHealthServer(agent: any, port: any = DEFAULT_PORT) {
-  const server = createServer((req: any, res: any) => {
+export function startHealthServer(agent: AgentClient, port: number = DEFAULT_PORT) {
+  const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     if (req.method === "GET" && req.url === "/health") {
       const payload = {
         status: agent.connected ? "ok" : "disconnected",

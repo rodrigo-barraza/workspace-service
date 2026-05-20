@@ -2,7 +2,7 @@
 
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
-
+import type { GitStatusParams, GitDiffParams, GitLogParams, PathValidation, GitFileChange } from "../types.ts";
 
 const GIT_TIMEOUT_MS = 10_000;
 const MAX_OUTPUT_BYTES = 512 * 1024;
@@ -11,10 +11,17 @@ const MAX_OUTPUT_BYTES = 512 * 1024;
 // Internal Git Runner
 // ────────────────────────────────────────────────────────────
 
-async function runGit(args: any, cwd: any): Promise<Record<string, any>> {
-  return new Promise((res: any) => {
-    const stdoutChunks: any[] = [];
-    const stderrChunks: any[] = [];
+interface GitResult {
+  stdout?: string;
+  stderr?: string;
+  error?: string;
+  exitCode?: number | null;
+}
+
+async function runGit(args: string[], cwd: string): Promise<GitResult> {
+  return new Promise((resolve_: (value: GitResult) => void) => {
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
     let stdoutLen = 0;
     let stderrLen = 0;
     let settled = false;
@@ -33,14 +40,14 @@ async function runGit(args: any, cwd: any): Promise<Record<string, any>> {
 
     child.stdin.end();
 
-    child.stdout.on("data", (chunk: any) => {
+    child.stdout.on("data", (chunk: Buffer) => {
       if (stdoutLen < MAX_OUTPUT_BYTES) {
         stdoutChunks.push(chunk);
         stdoutLen += chunk.length;
       }
     });
 
-    child.stderr.on("data", (chunk: any) => {
+    child.stderr.on("data", (chunk: Buffer) => {
       if (stderrLen < MAX_OUTPUT_BYTES) {
         stderrChunks.push(chunk);
         stderrLen += chunk.length;
@@ -51,11 +58,11 @@ async function runGit(args: any, cwd: any): Promise<Record<string, any>> {
       child.kill("SIGKILL");
       if (!settled) {
         settled = true;
-        res({ error: `Git command timed out after ${GIT_TIMEOUT_MS}ms` });
+        resolve_({ error: `Git command timed out after ${GIT_TIMEOUT_MS}ms` });
       }
     }, GIT_TIMEOUT_MS);
 
-    child.on("close", (code: any) => {
+    child.on("close", (code: number | null) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -64,18 +71,18 @@ async function runGit(args: any, cwd: any): Promise<Record<string, any>> {
       const stderr = Buffer.concat(stderrChunks).toString("utf-8");
 
       if (code !== 0) {
-        res({ error: stderr.trim() || `Git exited with code ${code}`, exitCode: code });
+        resolve_({ error: stderr.trim() || `Git exited with code ${code}`, exitCode: code });
         return;
       }
 
-      res({ stdout, stderr: stderr.trim() });
+      resolve_({ stdout, stderr: stderr.trim() });
     });
 
-    child.on("error", (processError: any) => {
+    child.on("error", (processError: Error) => {
       if (!settled) {
         settled = true;
         clearTimeout(timer);
-        res({ error: `Git process error: ${processError.message}` });
+        resolve_({ error: `Git process error: ${processError.message}` });
       }
     });
   });
@@ -87,18 +94,18 @@ async function runGit(args: any, cwd: any): Promise<Record<string, any>> {
 
 export class GitHandler {
   roots: string[];
-  constructor(roots: any) {
-    this.roots = roots.map((r: any) => resolve(r));
+  constructor(roots: string[]) {
+    this.roots = roots.map((r: string) => resolve(r));
   }
 
-  validatePath(inputPath: any) {
+  validatePath(inputPath: string): PathValidation {
     if (!inputPath || typeof inputPath !== "string") {
       return { safe: false, resolved: "", error: "Path is required" };
     }
     return { safe: true, resolved: resolve(inputPath) };
   }
 
-  async status({ path: repoPath }: any) {
+  async status({ path: repoPath }: GitStatusParams) {
     const validation = this.validatePath(repoPath);
     if (!validation.safe) return { error: validation.error };
 
@@ -107,7 +114,7 @@ export class GitHandler {
     const branchResult = await runGit(["branch", "--show-current"], cwd);
     if (branchResult.error) return { error: branchResult.error, path: cwd };
 
-    const branch = branchResult.stdout.trim();
+    const branch = (branchResult.stdout || "").trim();
 
     const statusResult = await runGit(
       ["status", "--short", "--branch", "--untracked-files=all"],
@@ -115,16 +122,16 @@ export class GitHandler {
     );
     if (statusResult.error) return { error: statusResult.error, path: cwd };
 
-    const lines = statusResult.stdout.trim().split("\n").filter(Boolean);
+    const lines = (statusResult.stdout || "").trim().split("\n").filter(Boolean);
     const branchLine = lines[0] || "";
     const fileLines = lines.slice(1);
 
     const aheadMatch = branchLine.match(/ahead (\d+)/);
     const behindMatch = branchLine.match(/behind (\d+)/);
 
-    const staged: any[] = [];
-    const unstaged: any[] = [];
-    const untracked: any[] = [];
+    const staged: GitFileChange[] = [];
+    const unstaged: GitFileChange[] = [];
+    const untracked: string[] = [];
 
     for (const line of fileLines) {
       const indexStatus = line[0];
@@ -152,7 +159,7 @@ export class GitHandler {
     };
   }
 
-  async diff({ path: repoPath, staged = false, filePath, ref }: any) {
+  async diff({ path: repoPath, staged = false, filePath, ref }: GitDiffParams) {
     const validation = this.validatePath(repoPath);
     if (!validation.safe) return { error: validation.error };
 
@@ -172,7 +179,7 @@ export class GitHandler {
     const result = await runGit(args, cwd);
     if (result.error) return { error: result.error, path: cwd };
 
-    const diff = result.stdout;
+    const diff = result.stdout || "";
     const hasChanges = diff.trim().length > 0;
     const additions = (diff.match(/^\+[^+]/gm) || []).length;
     const deletions = (diff.match(/^-[^-]/gm) || []).length;
@@ -189,7 +196,7 @@ export class GitHandler {
     };
   }
 
-  async log({ path: repoPath, limit = 20, author, since, filePath }: any) {
+  async log({ path: repoPath, limit = 20, author, since, filePath }: GitLogParams) {
     const validation = this.validatePath(repoPath);
     if (!validation.safe) return { error: validation.error };
 
@@ -212,10 +219,10 @@ export class GitHandler {
     const result = await runGit(args, cwd);
     if (result.error) return { error: result.error, path: cwd };
 
-    const commits = result.stdout
+    const commits = (result.stdout || "")
       .split(separator)
-      .filter((s: any) => s.trim())
-      .map((entry: any) => {
+      .filter((s: string) => s.trim())
+      .map((entry: string) => {
         const parts = entry.trim().split("|");
         return {
           hash: parts[0] || "",

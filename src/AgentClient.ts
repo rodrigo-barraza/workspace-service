@@ -9,6 +9,7 @@ import { FileHandler } from "./handlers/FileHandler.ts";
 import { GitHandler } from "./handlers/GitHandler.ts";
 import { CommandHandler } from "./handlers/CommandHandler.ts";
 import { ProjectHandler } from "./handlers/ProjectHandler.ts";
+import type { AgentClientOptions, RpcHandler, JsonRpcRequest, WatchParams } from "./types.ts";
 
 // ────────────────────────────────────────────────────────────
 // Constants
@@ -41,16 +42,9 @@ export class AgentClient {
   gitHandler: GitHandler;
   commandHandler: CommandHandler;
   projectHandler: ProjectHandler;
-  methodMap: Map<string, (params: any) => any>;
-  /**
+  methodMap: Map<string, RpcHandler>;
 
-   * @param {string} opts.backendUrl - WebSocket URL (e.g. ws://host:5590/ws/agent)
-   * @param {string[]} opts.roots - Local workspace root paths
-   * @param {string} opts.name - Human-readable agent name
-   * @param {string} opts.secret - API secret for auth
-   * @param {number} opts.reconnectInterval - Base reconnect delay (ms)
-   */
-  constructor({ backendUrl, roots, name, secret, reconnectInterval = 5000 }: any) {
+  constructor({ backendUrl, roots, name, secret, reconnectInterval = 5000 }: AgentClientOptions) {
     this.backendUrl = backendUrl;
     this.roots = roots;
     this.name = name;
@@ -66,7 +60,6 @@ export class AgentClient {
     this.heartbeatTimer = null;
     this.heartbeatTimeout = null;
 
-    /** @type {Map<string, { watcher: import('node:fs').FSWatcher, debounceTimer: NodeJS.Timeout|null }>} */
     this.watchers = new Map();
 
     // Initialize handlers
@@ -75,42 +68,42 @@ export class AgentClient {
     this.commandHandler = new CommandHandler(roots);
     this.projectHandler = new ProjectHandler(roots);
 
-    this.methodMap = new Map([
+    this.methodMap = new Map<string, RpcHandler>([
       // File operations
-      ["file.read", (p: any) => this.fileHandler.readFile(p)],
-      ["file.write", (p: any) => this.fileHandler.writeFile(p)],
-      ["file.strReplace", (p: any) => this.fileHandler.strReplace(p)],
-      ["file.patch", (p: any) => this.fileHandler.patchFile(p)],
-      ["file.info", (p: any) => this.fileHandler.fileInfo(p)],
-      ["file.diff", (p: any) => this.fileHandler.fileDiff(p)],
-      ["file.move", (p: any) => this.fileHandler.moveFile(p)],
-      ["file.delete", (p: any) => this.fileHandler.deleteFile(p)],
-      ["file.readMulti", (p: any) => this.fileHandler.multiFileRead(p)],
+      ["file.read", (p) => this.fileHandler.readFile(p as unknown as Parameters<FileHandler["readFile"]>[0])],
+      ["file.write", (p) => this.fileHandler.writeFile(p as unknown as Parameters<FileHandler["writeFile"]>[0])],
+      ["file.strReplace", (p) => this.fileHandler.strReplace(p as unknown as Parameters<FileHandler["strReplace"]>[0])],
+      ["file.patch", (p) => this.fileHandler.patchFile(p as unknown as Parameters<FileHandler["patchFile"]>[0])],
+      ["file.info", (p) => this.fileHandler.fileInfo(p as unknown as Parameters<FileHandler["fileInfo"]>[0])],
+      ["file.diff", (p) => this.fileHandler.fileDiff(p as unknown as Parameters<FileHandler["fileDiff"]>[0])],
+      ["file.move", (p) => this.fileHandler.moveFile(p as unknown as Parameters<FileHandler["moveFile"]>[0])],
+      ["file.delete", (p) => this.fileHandler.deleteFile(p as unknown as Parameters<FileHandler["deleteFile"]>[0])],
+      ["file.readMulti", (p) => this.fileHandler.multiFileRead(p as unknown as Parameters<FileHandler["multiFileRead"]>[0])],
 
       // Directory operations
-      ["directory.list", (p: any) => this.fileHandler.listDirectory(p)],
-      ["directory.create", (p: any) => this.fileHandler.createDirectory(p)],
+      ["directory.list", (p) => this.fileHandler.listDirectory(p as unknown as Parameters<FileHandler["listDirectory"]>[0])],
+      ["directory.create", (p) => this.fileHandler.createDirectory(p as unknown as Parameters<FileHandler["createDirectory"]>[0])],
 
       // Search operations
-      ["search.grep", (p: any) => this.fileHandler.grepSearch(p)],
-      ["search.glob", (p: any) => this.fileHandler.globFiles(p)],
+      ["search.grep", (p) => this.fileHandler.grepSearch(p as unknown as Parameters<FileHandler["grepSearch"]>[0])],
+      ["search.glob", (p) => this.fileHandler.globFiles(p as unknown as Parameters<FileHandler["globFiles"]>[0])],
 
       // Git operations
-      ["git.status", (p: any) => this.gitHandler.status(p)],
-      ["git.diff", (p: any) => this.gitHandler.diff(p)],
-      ["git.log", (p: any) => this.gitHandler.log(p)],
+      ["git.status", (p) => this.gitHandler.status(p as unknown as Parameters<GitHandler["status"]>[0])],
+      ["git.diff", (p) => this.gitHandler.diff(p as unknown as Parameters<GitHandler["diff"]>[0])],
+      ["git.log", (p) => this.gitHandler.log(p as unknown as Parameters<GitHandler["log"]>[0])],
 
       // Command execution
-      ["command.run", (p: any) => this.commandHandler.run(p)],
-      ["command.stream", (p: any) => this.commandHandler.runStreaming(p, (event: any, data: any) => this._sendNotification(event, data))],
+      ["command.run", (p) => this.commandHandler.run(p as unknown as Parameters<CommandHandler["run"]>[0])],
+      ["command.stream", (p) => this.commandHandler.runStreaming(p as unknown as Parameters<CommandHandler["runStreaming"]>[0], (event: string, data: Record<string, unknown>) => this._sendNotification(event, data))],
 
       // Project intelligence
-      ["project.summary", (p: any) => this.projectHandler.summary(p)],
+      ["project.summary", (p) => this.projectHandler.summary(p as unknown as Parameters<ProjectHandler["summary"]>[0])],
 
       // File watching (for VS Code FileSystemProvider)
-      ["watch.subscribe", (p: any) => this._watchPath(p)],
-      ["watch.unsubscribe", (p: any) => this._unwatchPath(p)],
-    ] as any);
+      ["watch.subscribe", (p) => this._watchPath(p as unknown as WatchParams)],
+      ["watch.unsubscribe", (p) => this._unwatchPath(p as unknown as WatchParams)],
+    ]);
   }
 
   // ──────────────────────────────────────────────────────────
@@ -136,12 +129,12 @@ export class AgentClient {
         this._startHeartbeat();
       });
 
-      this.ws.on("message", (raw: any) => {
+      this.ws.on("message", (raw: WebSocket.RawData) => {
         try {
-          const message = JSON.parse(raw.toString());
+          const message = JSON.parse(raw.toString()) as JsonRpcRequest;
           this._handleMessage(message);
-        } catch (error: any) {
-          logger.error(`Failed to parse message: ${error.message}`);
+        } catch (error: unknown) {
+          logger.error(`Failed to parse message: ${(error as Error).message}`);
         }
       });
 
@@ -149,7 +142,7 @@ export class AgentClient {
         if (this.heartbeatTimeout) clearTimeout(this.heartbeatTimeout);
       });
 
-      this.ws.on("close", (code: any, reason: any) => {
+      this.ws.on("close", (code: number, reason: Buffer) => {
         this.connected = false;
         this._stopHeartbeat();
         const reasonStr = reason?.toString() || "";
@@ -160,9 +153,9 @@ export class AgentClient {
         }
       });
 
-      this.ws.on("error", (wsError: any) => {
+      this.ws.on("error", (wsError: Error) => {
         // Suppress ECONNREFUSED spam during reconnect — the close event will handle retry
-        if ((wsError as any).code === "ECONNREFUSED") {
+        if ((wsError as NodeJS.ErrnoException).code === "ECONNREFUSED") {
           if (this.reconnectAttempts <= 1) {
             logger.error(`Connection refused: ${this.backendUrl}`);
           }
@@ -170,8 +163,8 @@ export class AgentClient {
           logger.error(`WebSocket error: ${wsError.message}`);
         }
       });
-    } catch (error: any) {
-      logger.error(`Failed to connect: ${error.message}`);
+    } catch (error: unknown) {
+      logger.error(`Failed to connect: ${(error as Error).message}`);
       this._scheduleReconnect();
     }
   }
@@ -218,7 +211,7 @@ export class AgentClient {
   // Message Handling
   // ──────────────────────────────────────────────────────────
 
-  async _handleMessage(message: any) {
+  async _handleMessage(message: JsonRpcRequest) {
     // Server acknowledgements / notifications (no id = notification)
     if (!message.id && message.method) {
       if (message.method === "agent.registered") {
@@ -246,11 +239,12 @@ export class AgentClient {
       try {
         const result = await handler(message.params || {});
         this._sendResponse(message.id, result, undefined);
-      } catch (error: any) {
-        logger.error(`Handler error (${message.method}): ${error.message}`);
+      } catch (error: unknown) {
+        const err = error as Error;
+        logger.error(`Handler error (${message.method}): ${err.message}`);
         this._sendResponse(message.id, null, {
           code: -32000,
-          message: error.message,
+          message: err.message,
         });
       }
       return;
@@ -267,15 +261,15 @@ export class AgentClient {
   // Transport
   // ──────────────────────────────────────────────────────────
 
-  _send(message: any) {
+  _send(message: Record<string, unknown>) {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
     }
   }
 
-  _sendResponse(id: any, result: any, error: any) {
+  _sendResponse(id: string, result: unknown, error: { code: number; message: string } | undefined) {
     logger.rpc("out", error ? "error" : "result", id);
-    const message: Record<string, any> = { jsonrpc: "2.0", id };
+    const message: Record<string, unknown> = { jsonrpc: "2.0", id };
     if (error) {
       message.error = error;
     } else {
@@ -284,7 +278,7 @@ export class AgentClient {
     this._send(message);
   }
 
-  _sendNotification(method: any, params: any) {
+  _sendNotification(method: string, params: Record<string, unknown>) {
     this._send({ jsonrpc: "2.0", method, params });
   }
 
@@ -342,11 +336,8 @@ export class AgentClient {
   /**
    * Subscribe to file-system changes on a path.
    * Pushes `watch.changed` notifications over WebSocket on changes.
-   *
-   * @param {{ path: string, recursive?: boolean }} params
-   * @returns {{ watching: boolean, path: string }}
    */
-  _watchPath({ path: watchPath, recursive = true }: any) {
+  _watchPath({ path: watchPath, recursive = true }: WatchParams) {
     if (!watchPath) return { error: "path is required" };
 
     const resolved = resolve(watchPath);
@@ -357,7 +348,7 @@ export class AgentClient {
     }
 
     try {
-      const watcher = watch(resolved, { recursive }, (eventType: any, filename: any) => {
+      const watcher = watch(resolved, { recursive }, (eventType: string, filename: string | null) => {
         // Debounce rapid changes (e.g. editor save → tmp → rename)
         const entry = this.watchers.get(resolved);
         if (!entry) return;
@@ -373,7 +364,7 @@ export class AgentClient {
         }, WATCH_DEBOUNCE_MS);
       });
 
-      watcher.on("error", (watchError: any) => {
+      watcher.on("error", (watchError: Error) => {
         logger.warn(`Watcher error on ${resolved}: ${watchError.message}`);
         this._unwatchPath({ path: resolved });
       });
@@ -381,16 +372,15 @@ export class AgentClient {
       this.watchers.set(resolved, { watcher, debounceTimer: null });
       logger.info(`Watching: ${resolved} (recursive=${recursive})`);
       return { watching: true, path: resolved };
-    } catch (error: any) {
-      return { error: `Failed to watch ${resolved}: ${error.message}` };
+    } catch (error: unknown) {
+      return { error: `Failed to watch ${resolved}: ${(error as Error).message}` };
     }
   }
 
   /**
    * Unsubscribe from file-system changes.
-   * @param {{ path: string }} params
    */
-  _unwatchPath({ path: watchPath }: any) {
+  _unwatchPath({ path: watchPath }: WatchParams) {
     if (!watchPath) return { error: "path is required" };
 
     const resolved = resolve(watchPath);
