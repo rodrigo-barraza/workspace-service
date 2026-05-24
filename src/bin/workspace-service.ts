@@ -24,45 +24,45 @@ program
   .option("-p, --health-port <port>", "Health endpoint port", "5605")
   .parse();
 
-const opts = program.opts();
+const cliOptions = program.opts();
 
 // ── Resolve backend (CLI flag → env var) ───────────────────────
-if (!opts.backend) {
-  opts.backend = process.env.WORKSPACE_BACKEND;
+if (!cliOptions.backend) {
+  cliOptions.backend = process.env.WORKSPACE_BACKEND;
 }
-if (!opts.backend) {
+if (!cliOptions.backend) {
   logger.error("Missing --backend flag or WORKSPACE_BACKEND env var");
   process.exit(1);
 }
 
 // ── Resolve workspace roots (CLI flag → env var) ───────────────
-if (!opts.workspace || opts.workspace.length === 0) {
+if (!cliOptions.workspace || cliOptions.workspace.length === 0) {
   const envRoots = process.env.WORKSPACE_ROOTS;
   if (envRoots) {
-    opts.workspace = envRoots.split(",").map((s: string) => s.trim()).filter(Boolean);
+    cliOptions.workspace = envRoots.split(",").map((s: string) => s.trim()).filter(Boolean);
   }
 }
-if (!opts.workspace || opts.workspace.length === 0) {
+if (!cliOptions.workspace || cliOptions.workspace.length === 0) {
   logger.error("Missing --workspace flag or WORKSPACE_ROOTS env var");
   process.exit(1);
 }
 
 // ── Validate workspace paths ───────────────────────────────────
-const roots = opts.workspace.map((p: string) => resolve(p));
+const roots = cliOptions.workspace.map((p: string) => resolve(p));
 for (const root of roots) {
   if (!existsSync(root)) {
     logger.error(`Workspace path does not exist: ${root}`);
     process.exit(1);
   }
-  const st = statSync(root);
-  if (!st.isDirectory()) {
+  const rootStats = statSync(root);
+  if (!rootStats.isDirectory()) {
     logger.error(`Workspace path is not a directory: ${root}`);
     process.exit(1);
   }
 }
 
 // ── Normalize backend URL ──────────────────────────────────────
-let backendUrl = opts.backend;
+let backendUrl = cliOptions.backend;
 // Ensure WebSocket protocol
 if (backendUrl.startsWith("http://")) {
   backendUrl = backendUrl.replace("http://", "ws://");
@@ -74,13 +74,13 @@ if (!backendUrl.includes("/ws/agent")) {
   backendUrl = backendUrl.replace(/\/+$/, "") + "/ws/agent";
 }
 
-const secret = opts.secret || process.env.WORKSPACE_SERVICE_SECRET || "";
-const reconnectInterval = parseInt(opts.reconnectInterval, 10) || 5000;
-const healthPort = parseInt(opts.healthPort, 10) || 5605;
+const secret = cliOptions.secret || process.env.WORKSPACE_SERVICE_SECRET || "";
+const reconnectInterval = parseInt(cliOptions.reconnectInterval, 10) || 5000;
+const healthPort = parseInt(cliOptions.healthPort, 10) || 5605;
 
 // ── Banner ─────────────────────────────────────────────────────
 logger.info("Workspace Service");
-logger.info(`Name ............. ${opts.name}`);
+logger.info(`Name ............. ${cliOptions.name}`);
 logger.info(`Backend .......... ${backendUrl}`);
 logger.info(`Workspaces ....... ${roots.join(", ")}`);
 logger.info(`Reconnect ........ ${reconnectInterval}ms`);
@@ -91,7 +91,7 @@ logger.info(`Auth ............. ${secret ? "secret configured" : "none"}`);
 const agent = new AgentClient({
   backendUrl,
   roots,
-  name: opts.name,
+  name: cliOptions.name,
   secret,
   reconnectInterval,
 });

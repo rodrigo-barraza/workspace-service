@@ -97,18 +97,18 @@ export class FileHandler {
         };
       }
 
-      const ext = extname(resolved).toLowerCase();
+      const fileExtension = extname(resolved).toLowerCase();
 
       // Binary file handling — return base64 for raw mode or previewable images
-      if (BINARY_EXTENSIONS.has(ext)) {
-        const includeBase64 = rawMode || (PREVIEW_IMAGE_EXTENSIONS.has(ext) && stats.size <= MAX_PREVIEW_BYTES);
+      if (BINARY_EXTENSIONS.has(fileExtension)) {
+        const includeBase64 = rawMode || (PREVIEW_IMAGE_EXTENSIONS.has(fileExtension) && stats.size <= MAX_PREVIEW_BYTES);
 
         if (includeBase64) {
           const buffer = await readFile(resolved);
           return {
             filePath: resolved,
             isBinary: true,
-            extension: ext,
+            extension: fileExtension,
             sizeBytes: stats.size,
             contentBase64: buffer.toString("base64"),
           };
@@ -116,9 +116,9 @@ export class FileHandler {
         return {
           filePath: resolved,
           isBinary: true,
-          extension: ext,
+          extension: fileExtension,
           sizeBytes: stats.size,
-          message: `Binary file detected (${ext}). Content not returned.`,
+          message: `Binary file detected (${fileExtension}). Content not returned.`,
         };
       }
 
@@ -330,7 +330,7 @@ export class FileHandler {
         const resolved = validation.resolved;
         try {
           const stats = await stat(resolved);
-          const ext = extname(resolved).toLowerCase();
+          const fileExtension = extname(resolved).toLowerCase();
           const info: FileInfoEntry = {
             path: resolved,
             exists: true,
@@ -338,11 +338,11 @@ export class FileHandler {
             isDirectory: stats.isDirectory(),
             sizeBytes: stats.size,
             lastModified: stats.mtime.toISOString(),
-            extension: ext || null,
-            isBinary: BINARY_EXTENSIONS.has(ext),
+            extension: fileExtension || null,
+            isBinary: BINARY_EXTENSIONS.has(fileExtension),
           };
 
-          if (stats.isFile() && !BINARY_EXTENSIONS.has(ext) && stats.size <= MAX_READ_BYTES) {
+          if (stats.isFile() && !BINARY_EXTENSIONS.has(fileExtension) && stats.size <= MAX_READ_BYTES) {
             try {
               const content = await readFile(resolved, "utf-8");
               info.lines = content.split("\n").length;
@@ -600,8 +600,8 @@ export class FileHandler {
 
       const searchFile = async (filePath: string) => {
         if (results.length >= MAX_GREP_RESULTS) return;
-        const ext = extname(filePath).toLowerCase();
-        if (BINARY_EXTENSIONS.has(ext)) return;
+        const fileExtension = extname(filePath).toLowerCase();
+        if (BINARY_EXTENSIONS.has(fileExtension)) return;
 
         const pathCheck = this.validatePath(filePath);
         if (!pathCheck.safe) return;
