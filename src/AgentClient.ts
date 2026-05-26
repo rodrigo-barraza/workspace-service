@@ -70,39 +70,39 @@ export class AgentClient {
 
     this.methodMap = new Map<string, RpcHandler>([
       // File operations
-      ["file.read", (p) => this.fileHandler.readFile(p as unknown as Parameters<FileHandler["readFile"]>[0])],
-      ["file.write", (p) => this.fileHandler.writeFile(p as unknown as Parameters<FileHandler["writeFile"]>[0])],
-      ["file.strReplace", (p) => this.fileHandler.strReplace(p as unknown as Parameters<FileHandler["strReplace"]>[0])],
-      ["file.patch", (p) => this.fileHandler.patchFile(p as unknown as Parameters<FileHandler["patchFile"]>[0])],
-      ["file.info", (p) => this.fileHandler.fileInfo(p as unknown as Parameters<FileHandler["fileInfo"]>[0])],
-      ["file.diff", (p) => this.fileHandler.fileDiff(p as unknown as Parameters<FileHandler["fileDiff"]>[0])],
-      ["file.move", (p) => this.fileHandler.moveFile(p as unknown as Parameters<FileHandler["moveFile"]>[0])],
-      ["file.delete", (p) => this.fileHandler.deleteFile(p as unknown as Parameters<FileHandler["deleteFile"]>[0])],
-      ["file.readMulti", (p) => this.fileHandler.multiFileRead(p as unknown as Parameters<FileHandler["multiFileRead"]>[0])],
+      ["file.read", (rpcParams) => this.fileHandler.readFile(rpcParams as unknown as Parameters<FileHandler["readFile"]>[0])],
+      ["file.write", (rpcParams) => this.fileHandler.writeFile(rpcParams as unknown as Parameters<FileHandler["writeFile"]>[0])],
+      ["file.strReplace", (rpcParams) => this.fileHandler.strReplace(rpcParams as unknown as Parameters<FileHandler["strReplace"]>[0])],
+      ["file.patch", (rpcParams) => this.fileHandler.patchFile(rpcParams as unknown as Parameters<FileHandler["patchFile"]>[0])],
+      ["file.info", (rpcParams) => this.fileHandler.fileInfo(rpcParams as unknown as Parameters<FileHandler["fileInfo"]>[0])],
+      ["file.diff", (rpcParams) => this.fileHandler.fileDiff(rpcParams as unknown as Parameters<FileHandler["fileDiff"]>[0])],
+      ["file.move", (rpcParams) => this.fileHandler.moveFile(rpcParams as unknown as Parameters<FileHandler["moveFile"]>[0])],
+      ["file.delete", (rpcParams) => this.fileHandler.deleteFile(rpcParams as unknown as Parameters<FileHandler["deleteFile"]>[0])],
+      ["file.readMulti", (rpcParams) => this.fileHandler.multiFileRead(rpcParams as unknown as Parameters<FileHandler["multiFileRead"]>[0])],
 
       // Directory operations
-      ["directory.list", (p) => this.fileHandler.listDirectory(p as unknown as Parameters<FileHandler["listDirectory"]>[0])],
-      ["directory.create", (p) => this.fileHandler.createDirectory(p as unknown as Parameters<FileHandler["createDirectory"]>[0])],
+      ["directory.list", (rpcParams) => this.fileHandler.listDirectory(rpcParams as unknown as Parameters<FileHandler["listDirectory"]>[0])],
+      ["directory.create", (rpcParams) => this.fileHandler.createDirectory(rpcParams as unknown as Parameters<FileHandler["createDirectory"]>[0])],
 
       // Search operations
-      ["search.grep", (p) => this.fileHandler.grepSearch(p as unknown as Parameters<FileHandler["grepSearch"]>[0])],
-      ["search.glob", (p) => this.fileHandler.globFiles(p as unknown as Parameters<FileHandler["globFiles"]>[0])],
+      ["search.grep", (rpcParams) => this.fileHandler.grepSearch(rpcParams as unknown as Parameters<FileHandler["grepSearch"]>[0])],
+      ["search.glob", (rpcParams) => this.fileHandler.globFiles(rpcParams as unknown as Parameters<FileHandler["globFiles"]>[0])],
 
       // Git operations
-      ["git.status", (p) => this.gitHandler.status(p as unknown as Parameters<GitHandler["status"]>[0])],
-      ["git.diff", (p) => this.gitHandler.diff(p as unknown as Parameters<GitHandler["diff"]>[0])],
-      ["git.log", (p) => this.gitHandler.log(p as unknown as Parameters<GitHandler["log"]>[0])],
+      ["git.status", (rpcParams) => this.gitHandler.status(rpcParams as unknown as Parameters<GitHandler["status"]>[0])],
+      ["git.diff", (rpcParams) => this.gitHandler.diff(rpcParams as unknown as Parameters<GitHandler["diff"]>[0])],
+      ["git.log", (rpcParams) => this.gitHandler.log(rpcParams as unknown as Parameters<GitHandler["log"]>[0])],
 
       // Command execution
-      ["command.run", (p) => this.commandHandler.run(p as unknown as Parameters<CommandHandler["run"]>[0])],
-      ["command.stream", (p) => this.commandHandler.runStreaming(p as unknown as Parameters<CommandHandler["runStreaming"]>[0], (event: string, data: Record<string, unknown>) => this._sendNotification(event, data))],
+      ["command.run", (rpcParams) => this.commandHandler.run(rpcParams as unknown as Parameters<CommandHandler["run"]>[0])],
+      ["command.stream", (rpcParams) => this.commandHandler.runStreaming(rpcParams as unknown as Parameters<CommandHandler["runStreaming"]>[0], (event: string, data: Record<string, unknown>) => this._sendNotification(event, data))],
 
       // Project intelligence
-      ["project.summary", (p) => this.projectHandler.summary(p as unknown as Parameters<ProjectHandler["summary"]>[0])],
+      ["project.summary", (rpcParams) => this.projectHandler.summary(rpcParams as unknown as Parameters<ProjectHandler["summary"]>[0])],
 
       // File watching (for VS Code FileSystemProvider)
-      ["watch.subscribe", (p) => this._watchPath(p as unknown as WatchParams)],
-      ["watch.unsubscribe", (p) => this._unwatchPath(p as unknown as WatchParams)],
+      ["watch.subscribe", (rpcParams) => this._watchPath(rpcParams as unknown as WatchParams)],
+      ["watch.unsubscribe", (rpcParams) => this._unwatchPath(rpcParams as unknown as WatchParams)],
     ]);
   }
 
@@ -240,11 +240,11 @@ export class AgentClient {
         const result = await handler(message.params || {});
         this._sendResponse(message.id, result, undefined);
       } catch (error: unknown) {
-        const err = error as Error;
-        logger.error(`Handler error (${message.method}): ${err.message}`);
+        const errorObject = error as Error;
+        logger.error(`Handler error (${message.method}): ${errorObject.message}`);
         this._sendResponse(message.id, null, {
           code: -32000,
-          message: err.message,
+          message: errorObject.message,
         });
       }
       return;

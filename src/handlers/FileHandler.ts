@@ -59,7 +59,7 @@ function globToRegex(glob: string) {
 export class FileHandler {
   roots: string[];
   constructor(roots: string[]) {
-    this.roots = roots.map((r: string) => resolve(r));
+    this.roots = roots.map((rootPath: string) => resolve(rootPath));
   }
 
   /**
@@ -147,7 +147,7 @@ export class FileHandler {
 
       const selectedLines = allLines.slice(start - 1, end);
       const numberedContent = selectedLines
-        .map((line: string, i: number) => `${start + i}: ${line}`)
+        .map((line: string, lineIndex: number) => `${start + lineIndex}: ${line}`)
         .join("\n");
 
       return {
@@ -161,9 +161,9 @@ export class FileHandler {
         content: numberedContent,
       };
     } catch (error: unknown) {
-      const err = error as NodeJS.ErrnoException;
-      if (err.code === "ENOENT") return { error: `File not found: ${resolved}` };
-      return { error: `Read failed: ${err.message}` };
+      const errorObject = error as NodeJS.ErrnoException;
+      if (errorObject.code === "ENOENT") return { error: `File not found: ${resolved}` };
+      return { error: `Read failed: ${errorObject.message}` };
     }
   }
 
@@ -264,9 +264,9 @@ export class FileHandler {
         lineDelta: newLines - oldLines,
       };
     } catch (error: unknown) {
-      const err = error as NodeJS.ErrnoException;
-      if (err.code === "ENOENT") return { error: `File not found: ${resolved}` };
-      return { error: `str_replace failed: ${err.message}` };
+      const errorObject = error as NodeJS.ErrnoException;
+      if (errorObject.code === "ENOENT") return { error: `File not found: ${resolved}` };
+      return { error: `str_replace failed: ${errorObject.message}` };
     }
   }
 
@@ -305,9 +305,9 @@ export class FileHandler {
         lineDelta: newLines - oldLines,
       };
     } catch (error: unknown) {
-      const err = error as NodeJS.ErrnoException;
-      if (err.code === "ENOENT") return { error: `File not found: ${resolved}` };
-      return { error: `patch_file failed: ${err.message}` };
+      const errorObject = error as NodeJS.ErrnoException;
+      if (errorObject.code === "ENOENT") return { error: `File not found: ${resolved}` };
+      return { error: `patch_file failed: ${errorObject.message}` };
     }
   }
 
@@ -321,10 +321,10 @@ export class FileHandler {
     }
 
     const results = await Promise.all(
-      pathList.map(async (p: string): Promise<FileInfoEntry> => {
-        const validation = this.validatePath(p);
+      pathList.map(async (pathString: string): Promise<FileInfoEntry> => {
+        const validation = this.validatePath(pathString);
         if (!validation.safe) {
-          return { path: p, exists: false, error: validation.error };
+          return { path: pathString, exists: false, error: validation.error };
         }
 
         const resolved = validation.resolved;
@@ -351,9 +351,9 @@ export class FileHandler {
 
           return info;
         } catch (error: unknown) {
-          const err = error as NodeJS.ErrnoException;
-          if (err.code === "ENOENT") return { path: resolved, exists: false };
-          return { path: resolved, exists: false, error: err.message };
+          const errorObject = error as NodeJS.ErrnoException;
+          if (errorObject.code === "ENOENT") return { path: resolved, exists: false };
+          return { path: resolved, exists: false, error: errorObject.message };
         }
       }),
     );
@@ -403,9 +403,9 @@ export class FileHandler {
         diff: hasChanges ? diff : "(files are identical)",
       };
     } catch (error: unknown) {
-      const err = error as NodeJS.ErrnoException;
-      if (err.code === "ENOENT") return { error: `File not found: ${err.path || pathA}` };
-      return { error: `file_diff failed: ${err.message}` };
+      const errorObject = error as NodeJS.ErrnoException;
+      if (errorObject.code === "ENOENT") return { error: `File not found: ${errorObject.path || pathA}` };
+      return { error: `file_diff failed: ${errorObject.message}` };
     }
   }
 
@@ -454,9 +454,9 @@ export class FileHandler {
 
       return { filePath: validation.resolved, deleted: true, sizeBytes };
     } catch (error: unknown) {
-      const err = error as NodeJS.ErrnoException;
-      if (err.code === "ENOENT") return { error: `File not found: ${validation.resolved}` };
-      return { error: `delete_file failed: ${err.message}` };
+      const errorObject = error as NodeJS.ErrnoException;
+      if (errorObject.code === "ENOENT") return { error: `File not found: ${validation.resolved}` };
+      return { error: `delete_file failed: ${errorObject.message}` };
     }
   }
 
@@ -469,18 +469,18 @@ export class FileHandler {
     }
 
     const results = await Promise.all(
-      files.map(async (f: { path: string; startLine?: number; endLine?: number }) => {
+      files.map(async (fileItem: { path: string; startLine?: number; endLine?: number }) => {
         const result = await this.readFile({
-          path: f.path,
-          startLine: f.startLine,
-          endLine: f.endLine,
+          path: fileItem.path,
+          startLine: fileItem.startLine,
+          endLine: fileItem.endLine,
         });
-        return { path: f.path, ...result };
+        return { path: fileItem.path, ...result };
       }),
     );
 
-    const succeeded = results.filter((r) => !("error" in r && r.error)).length;
-    const failed = results.filter((r) => "error" in r && r.error).length;
+    const succeeded = results.filter((result) => !("error" in result && result.error)).length;
+    const failed = results.filter((result) => "error" in result && result.error).length;
 
     return { totalRequested: files.length, succeeded, failed, results };
   }
@@ -565,9 +565,9 @@ export class FileHandler {
         entries,
       };
     } catch (error: unknown) {
-      const err = error as NodeJS.ErrnoException;
-      if (err.code === "ENOENT") return { error: `Directory not found: ${resolved}` };
-      return { error: `list_directory failed: ${err.message}` };
+      const errorObject = error as NodeJS.ErrnoException;
+      if (errorObject.code === "ENOENT") return { error: `Directory not found: ${resolved}` };
+      return { error: `list_directory failed: ${errorObject.message}` };
     }
   }
 
