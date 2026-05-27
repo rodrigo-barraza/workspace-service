@@ -127,15 +127,15 @@ async function connectWorkspace(context: vscode.ExtensionContext): Promise<void>
   // Discover available agents
   statusBarItem.text = "$(sync~spin) Discovering agents…";
 
-  let wsUrl = backendUrl;
-  if (wsUrl.startsWith("http://")) wsUrl = wsUrl.replace("http://", "ws://");
-  if (wsUrl.startsWith("https://")) wsUrl = wsUrl.replace("https://", "wss://");
-  if (!wsUrl.includes("/ws/workspace")) {
-    wsUrl = wsUrl.replace(/\/+$/, "").replace(/\/ws\/.*$/, "") + "/ws/workspace";
+  let websocketUrl = backendUrl;
+  if (websocketUrl.startsWith("http://")) websocketUrl = websocketUrl.replace("http://", "ws://");
+  if (websocketUrl.startsWith("https://")) websocketUrl = websocketUrl.replace("https://", "wss://");
+  if (!websocketUrl.includes("/ws/workspace")) {
+    websocketUrl = websocketUrl.replace(/\/+$/, "").replace(/\/ws\/.*$/, "") + "/ws/workspace";
   }
 
   // Temporarily connect to discover agents
-  const tempClient = new RpcClient(wsUrl, secret);
+  const tempClient = new RpcClient(websocketUrl, secret);
 
   const agentsPromise = new Promise<AgentInfo[]>((resolve) => {
     let resolved = false;
@@ -226,14 +226,14 @@ function _connect(
   }
 
   // Normalize WebSocket URL — connect to the client proxy endpoint
-  let wsUrl = backendUrl;
-  if (wsUrl.startsWith("http://")) wsUrl = wsUrl.replace("http://", "ws://");
-  if (wsUrl.startsWith("https://")) wsUrl = wsUrl.replace("https://", "wss://");
-  if (!wsUrl.includes("/ws/workspace")) {
-    wsUrl = wsUrl.replace(/\/+$/, "").replace(/\/ws\/.*$/, "") + "/ws/workspace";
+  let websocketUrl = backendUrl;
+  if (websocketUrl.startsWith("http://")) websocketUrl = websocketUrl.replace("http://", "ws://");
+  if (websocketUrl.startsWith("https://")) websocketUrl = websocketUrl.replace("https://", "wss://");
+  if (!websocketUrl.includes("/ws/workspace")) {
+    websocketUrl = websocketUrl.replace(/\/+$/, "").replace(/\/ws\/.*$/, "") + "/ws/workspace";
   }
 
-  rpcClient = new RpcClient(wsUrl, secret);
+  rpcClient = new RpcClient(websocketUrl, secret);
 
   // Swap the RPC client on the existing filesystem provider (registered once in activate())
   if (fileSystem) {
