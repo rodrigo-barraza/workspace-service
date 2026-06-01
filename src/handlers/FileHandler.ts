@@ -3,7 +3,7 @@
 import { readFile, writeFile, stat, readdir, mkdir, rename, unlink } from "node:fs/promises";
 import { resolve, relative, extname, dirname } from "node:path";
 import { existsSync } from "node:fs";
-import { escapeRegex } from "@rodrigo-barraza/utilities-library";
+import { escapeRegex, errorMessage } from "@rodrigo-barraza/utilities-library";
 import type {
   ReadFileParams, WriteFileParams, StrReplaceParams, PatchFileParams,
   FileInfoParams, FileDiffParams, MoveFileParams, DeleteFileParams,
@@ -201,7 +201,7 @@ export class FileHandler {
         linesWritten: lines,
       };
     } catch (error: unknown) {
-      return { error: `Write failed: ${(error as Error).message}` };
+      return { error: `Write failed: ${errorMessage(error)}` };
     }
   }
 
@@ -435,7 +435,7 @@ export class FileHandler {
         success: true,
       };
     } catch (error: unknown) {
-      return { error: `move_file failed: ${(error as Error).message}` };
+      return { error: `move_file failed: ${errorMessage(error)}` };
     }
   }
 
@@ -507,7 +507,7 @@ export class FileHandler {
       await mkdir(resolved, { recursive: true });
       return { path: resolved, created: true };
     } catch (error: unknown) {
-      return { error: `create_directory failed: ${(error as Error).message}` };
+      return { error: `create_directory failed: ${errorMessage(error)}` };
     }
   }
 
@@ -592,7 +592,7 @@ export class FileHandler {
           ? new RegExp(pattern, caseInsensitive ? "gi" : "g")
           : new RegExp(escapeRegex(pattern), caseInsensitive ? "gi" : "g");
       } catch (error: unknown) {
-        return { error: `Invalid regex pattern: ${(error as Error).message}` };
+        return { error: `Invalid regex pattern: ${errorMessage(error)}` };
       }
 
       const results: GrepMatch[] = [];
@@ -681,7 +681,7 @@ export class FileHandler {
         results,
       };
     } catch (error: unknown) {
-      return { error: `grep_search failed: ${(error as Error).message}` };
+      return { error: `grep_search failed: ${errorMessage(error)}` };
     }
   }
 
@@ -740,7 +740,7 @@ export class FileHandler {
         matches,
       };
     } catch (error: unknown) {
-      return { error: `glob_files failed: ${(error as Error).message}` };
+      return { error: `glob_files failed: ${errorMessage(error)}` };
     }
   }
 }

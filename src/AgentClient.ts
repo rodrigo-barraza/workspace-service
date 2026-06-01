@@ -10,6 +10,7 @@ import { GitHandler } from "./handlers/GitHandler.ts";
 import { CommandHandler } from "./handlers/CommandHandler.ts";
 import { ProjectHandler } from "./handlers/ProjectHandler.ts";
 import type { AgentClientOptions, RpcHandler, JsonRpcRequest, WatchParams } from "./types.ts";
+import { errorMessage } from "@rodrigo-barraza/utilities-library";
 
 // ────────────────────────────────────────────────────────────
 // Constants
@@ -134,7 +135,7 @@ export class AgentClient {
           const message = JSON.parse(raw.toString()) as JsonRpcRequest;
           this._handleMessage(message);
         } catch (error: unknown) {
-          logger.error(`Failed to parse message: ${(error as Error).message}`);
+          logger.error(`Failed to parse message: ${errorMessage(error)}`);
         }
       });
 
@@ -164,7 +165,7 @@ export class AgentClient {
         }
       });
     } catch (error: unknown) {
-      logger.error(`Failed to connect: ${(error as Error).message}`);
+      logger.error(`Failed to connect: ${errorMessage(error)}`);
       this._scheduleReconnect();
     }
   }
@@ -240,11 +241,11 @@ export class AgentClient {
         const result = await handler(message.params || {});
         this._sendResponse(message.id, result, undefined);
       } catch (error: unknown) {
-        const errorObject = error as Error;
-        logger.error(`Handler error (${message.method}): ${errorObject.message}`);
+        const messageText = errorMessage(error);
+        logger.error(`Handler error (${message.method}): ${messageText}`);
         this._sendResponse(message.id, null, {
           code: -32000,
-          message: errorObject.message,
+          message: messageText,
         });
       }
       return;
@@ -373,7 +374,7 @@ export class AgentClient {
       logger.info(`Watching: ${resolved} (recursive=${recursive})`);
       return { watching: true, path: resolved };
     } catch (error: unknown) {
-      return { error: `Failed to watch ${resolved}: ${(error as Error).message}` };
+      return { error: `Failed to watch ${resolved}: ${errorMessage(error)}` };
     }
   }
 
