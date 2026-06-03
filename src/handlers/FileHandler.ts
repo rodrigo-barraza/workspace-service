@@ -5,7 +5,7 @@ import { resolve, relative, extname, dirname } from "node:path";
 import { existsSync } from "node:fs";
 import { escapeRegex, errorMessage } from "@rodrigo-barraza/utilities-library";
 import type {
-  ReadFileParams, WriteFileParams, StrReplaceParams, PatchFileParams,
+  ReadFileParams, WriteFileParams, StringReplaceParameters, PatchFileParams,
   FileInfoParams, FileDiffParams, MoveFileParams, DeleteFileParams,
   MultiFileReadParams, ListDirectoryParams, CreateDirectoryParams,
   GrepSearchParams, GlobFilesParams,
@@ -205,15 +205,15 @@ export class FileHandler {
     }
   }
 
-  async strReplace({ path: filePath, oldStr, newStr, allowMultiple = false }: StrReplaceParams) {
+  async stringReplace({ path: filePath, oldString, newString, allowMultiple = false }: StringReplaceParameters) {
     const validation = this.validatePath(filePath);
     if (!validation.safe) return { error: validation.error };
 
-    if (!oldStr || typeof oldStr !== "string") {
-      return { error: "'oldStr' is required and must be a non-empty string" };
+    if (!oldString || typeof oldString !== "string") {
+      return { error: "'oldString' is required and must be a non-empty string" };
     }
-    if (typeof newStr !== "string") {
-      return { error: "'newStr' must be a string" };
+    if (typeof newString !== "string") {
+      return { error: "'newString' must be a string" };
     }
 
     const resolved = validation.resolved;
@@ -223,13 +223,13 @@ export class FileHandler {
 
       let count = 0;
       let index = -1;
-      while ((index = content.indexOf(oldStr, index + 1)) !== -1) {
+      while ((index = content.indexOf(oldString, index + 1)) !== -1) {
         count++;
       }
 
       if (count === 0) {
         return {
-          error: "No match found for 'oldStr'. The exact string was not found in the file.",
+          error: "No match found for 'oldString'. The exact string was not found in the file.",
           filePath: resolved,
           matchCount: 0,
         };
@@ -237,7 +237,7 @@ export class FileHandler {
 
       if (count > 1 && !allowMultiple) {
         return {
-          error: `Found ${count} occurrences of 'oldStr' but allowMultiple is false.`,
+          error: `Found ${count} occurrences of 'oldString' but allowMultiple is false.`,
           filePath: resolved,
           matchCount: count,
         };
@@ -245,15 +245,15 @@ export class FileHandler {
 
       let updated: string;
       if (allowMultiple) {
-        updated = content.split(oldStr).join(newStr);
+        updated = content.split(oldString).join(newString);
       } else {
-        updated = content.replace(oldStr, newStr);
+        updated = content.replace(oldString, newString);
       }
 
       await writeFile(resolved, updated, "utf-8");
 
-      const oldLines = oldStr.split("\n").length;
-      const newLines = newStr.split("\n").length;
+      const oldLines = oldString.split("\n").length;
+      const newLines = newString.split("\n").length;
 
       return {
         filePath: resolved,
@@ -266,7 +266,7 @@ export class FileHandler {
     } catch (error: unknown) {
       const errorObject = error as NodeJS.ErrnoException;
       if (errorObject.code === "ENOENT") return { error: `File not found: ${resolved}` };
-      return { error: `str_replace failed: ${errorObject.message}` };
+      return { error: `stringReplace failed: ${errorObject.message}` };
     }
   }
 
@@ -410,28 +410,28 @@ export class FileHandler {
   }
 
   async moveFile({ source, destination, createDirs = true }: MoveFileParams) {
-    const validSrc = this.validatePath(source);
-    if (!validSrc.safe) return { error: validSrc.error };
-    const validDst = this.validatePath(destination);
-    if (!validDst.safe) return { error: validDst.error };
+    const validSource = this.validatePath(source);
+    if (!validSource.safe) return { error: validSource.error };
+    const validDestination = this.validatePath(destination);
+    if (!validDestination.safe) return { error: validDestination.error };
 
     try {
-      if (!existsSync(validSrc.resolved)) {
-        return { error: `Source not found: ${validSrc.resolved}` };
+      if (!existsSync(validSource.resolved)) {
+        return { error: `Source not found: ${validSource.resolved}` };
       }
-      if (existsSync(validDst.resolved)) {
-        return { error: `Destination already exists: ${validDst.resolved}.` };
+      if (existsSync(validDestination.resolved)) {
+        return { error: `Destination already exists: ${validDestination.resolved}.` };
       }
 
       if (createDirs) {
-        await mkdir(dirname(validDst.resolved), { recursive: true });
+        await mkdir(dirname(validDestination.resolved), { recursive: true });
       }
 
-      await rename(validSrc.resolved, validDst.resolved);
+      await rename(validSource.resolved, validDestination.resolved);
 
       return {
-        source: validSrc.resolved,
-        destination: validDst.resolved,
+        source: validSource.resolved,
+        destination: validDestination.resolved,
         success: true,
       };
     } catch (error: unknown) {
@@ -535,22 +535,22 @@ export class FileHandler {
           if (entries.length >= MAX_DIR_ENTRIES) break;
 
           const fullPath = resolve(dir, entry.name);
-          const relPath = relative(resolved, fullPath);
+          const relativePath = relative(resolved, fullPath);
 
           const pathValidation = this.validatePath(fullPath);
           if (!pathValidation.safe) continue;
 
           if (entry.isDirectory()) {
-            entries.push({ name: entry.name, path: relPath, isDir: true });
+            entries.push({ name: entry.name, path: relativePath, isDir: true });
             if (recursive && depth < maxDepth) {
               await walk(fullPath, depth + 1);
             }
           } else {
             try {
               const fileStat = await stat(fullPath);
-              entries.push({ name: entry.name, path: relPath, isDir: false, sizeBytes: fileStat.size });
+              entries.push({ name: entry.name, path: relativePath, isDir: false, sizeBytes: fileStat.size });
             } catch {
-              entries.push({ name: entry.name, path: relPath, isDir: false });
+              entries.push({ name: entry.name, path: relativePath, isDir: false });
             }
           }
         }
@@ -704,25 +704,25 @@ export class FileHandler {
         for (const entry of entries) {
           if (matches.length >= MAX_GLOB_RESULTS) break;
           const fullPath = resolve(dir, entry.name);
-          const relPath = relative(resolved, fullPath);
+          const relativePath = relative(resolved, fullPath);
 
           if (entry.isDirectory()) {
             if (entry.name === "node_modules" || entry.name === ".git") continue;
             await walk(fullPath);
           } else {
-            if (globRegex.test(relPath) || globRegex.test(entry.name)) {
+            if (globRegex.test(relativePath) || globRegex.test(entry.name)) {
               const pathCheck = this.validatePath(fullPath);
               if (!pathCheck.safe) continue;
               try {
                 const fileStat = await stat(fullPath);
                 matches.push({
                   path: fullPath,
-                  relativePath: relPath,
+                  relativePath,
                   name: entry.name,
                   sizeBytes: fileStat.size,
                 });
               } catch {
-                matches.push({ path: fullPath, relativePath: relPath, name: entry.name });
+                matches.push({ path: fullPath, relativePath, name: entry.name });
               }
             }
           }

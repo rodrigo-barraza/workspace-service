@@ -53,10 +53,10 @@ export interface WriteFileParams {
   createDirs?: boolean;
 }
 
-export interface StrReplaceParams {
+export interface StringReplaceParameters {
   path: string;
-  oldStr: string;
-  newStr: string;
+  oldString: string;
+  newString: string;
   allowMultiple?: boolean;
 }
 

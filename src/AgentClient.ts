@@ -73,7 +73,7 @@ export class AgentClient {
       // File operations
       ["file.read", (rpcParams) => this.fileHandler.readFile(rpcParams as unknown as Parameters<FileHandler["readFile"]>[0])],
       ["file.write", (rpcParams) => this.fileHandler.writeFile(rpcParams as unknown as Parameters<FileHandler["writeFile"]>[0])],
-      ["file.strReplace", (rpcParams) => this.fileHandler.strReplace(rpcParams as unknown as Parameters<FileHandler["strReplace"]>[0])],
+      ["file.strReplace", (rpcParams) => this.fileHandler.stringReplace(rpcParams as unknown as Parameters<FileHandler["stringReplace"]>[0])],
       ["file.patch", (rpcParams) => this.fileHandler.patchFile(rpcParams as unknown as Parameters<FileHandler["patchFile"]>[0])],
       ["file.info", (rpcParams) => this.fileHandler.fileInfo(rpcParams as unknown as Parameters<FileHandler["fileInfo"]>[0])],
       ["file.diff", (rpcParams) => this.fileHandler.fileDiff(rpcParams as unknown as Parameters<FileHandler["fileDiff"]>[0])],
@@ -146,8 +146,8 @@ export class AgentClient {
       this.ws.on("close", (code: number, reason: Buffer) => {
         this.connected = false;
         this._stopHeartbeat();
-        const reasonStr = reason?.toString() || "";
-        logger.warn(`Disconnected (code=${code}${reasonStr ? `, reason=${reasonStr}` : ""})`);
+        const reasonString = reason?.toString() || "";
+        logger.warn(`Disconnected (code=${code}${reasonString ? `, reason=${reasonString}` : ""})`);
 
         if (!this.intentionalClose) {
           this._scheduleReconnect();
