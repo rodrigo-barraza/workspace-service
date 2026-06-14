@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline';">
+  <title>Prism Workspace Agent — Setup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="setup.css">
+</head>
+<body>
+  <main class="setup-container">
+    <header class="setup-header">
+      <div class="prism-logo-container">
+        <svg class="prism-logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+          <polyline points="2 17 12 22 22 17"></polyline>
+          <polyline points="2 12 12 17 22 12"></polyline>
+        </svg>
+      </div>
+      <h1 class="setup-title">Connect Your Workspace</h1>
+      <p class="setup-subtitle">Set up Prism Agent to bridge your local files with Prism's AI tools</p>
+    </header>
+
+    <form id="setup-form" class="setup-form">
+      <div class="form-field">
+        <label class="field-label" for="backend-url-input">Backend URL</label>
+        <input
+          type="url"
+          id="backend-url-input"
+          class="field-input"
+          value="wss://api.tools.rod.dev"
+          placeholder="wss://api.tools.rod.dev"
+          required
+        >
+        <span class="field-hint">WebSocket URL of your Prism tools-service</span>
+      </div>
+
+      <div class="form-field">
+        <label class="field-label" for="secret-input">API Secret</label>
+        <div class="password-field-wrapper">
+          <input
+            type="password"
+            id="secret-input"
+            class="field-input"
+            placeholder="Enter your API secret"
+            required
+          >
+          <button type="button" id="toggle-secret-visibility" class="visibility-toggle-button" title="Toggle visibility">
+            <svg id="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+            <svg id="eye-off-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" style="display:none">
+              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+              <line x1="1" y1="1" x2="23" y2="23"></line>
+            </svg>
+          </button>
+        </div>
+        <span class="field-hint">Your Prism API access token for authentication</span>
+      </div>
+
+      <div class="form-field">
+        <label class="field-label" for="workspace-path-input">Workspace Folder</label>
+        <div class="folder-field-wrapper">
+          <input
+            type="text"
+            id="workspace-path-input"
+            class="field-input"
+            placeholder="Select a directory…"
+            required
+            readonly
+          >
+          <button type="button" id="browse-folder-button" class="browse-button">
+            Browse…
+          </button>
+        </div>
+        <span class="field-hint">Local directory to give Prism file, git, and shell access</span>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" id="connect-button" class="connect-button" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+            <path d="M5 12h14"></path>
+            <path d="m12 5 7 7-7 7"></path>
+          </svg>
+          Connect
+        </button>
+      </div>
+    </form>
+
+    <footer class="setup-footer">
+      <span class="footer-text">Nothing is uploaded — all file access stays on your device</span>
+    </footer>
+  </main>
+
+  <script>
+    const backendUrlInput = document.getElementById("backend-url-input");
+    const secretInput = document.getElementById("secret-input");
+    const workspacePathInput = document.getElementById("workspace-path-input");
+    const browseFolderButton = document.getElementById("browse-folder-button");
+    const connectButton = document.getElementById("connect-button");
+    const toggleSecretVisibility = document.getElementById("toggle-secret-visibility");
+    const eyeIcon = document.getElementById("eye-icon");
+    const eyeOffIcon = document.getElementById("eye-off-icon");
+    const setupForm = document.getElementById("setup-form");
+
+    function validateForm() {
+      const isValid = backendUrlInput.value.trim() &&
+                      secretInput.value.trim() &&
+                      workspacePathInput.value.trim();
+      connectButton.disabled = !isValid;
+    }
+
+    backendUrlInput.addEventListener("input", validateForm);
+    secretInput.addEventListener("input", validateForm);
+    workspacePathInput.addEventListener("input", validateForm);
+
+    toggleSecretVisibility.addEventListener("click", () => {
+      const isPassword = secretInput.type === "password";
+      secretInput.type = isPassword ? "text" : "password";
+      eyeIcon.style.display = isPassword ? "none" : "block";
+      eyeOffIcon.style.display = isPassword ? "block" : "none";
+    });
+
+    browseFolderButton.addEventListener("click", async () => {
+      const selectedPath = await window.prismAgent.openFolderDialog();
+      if (selectedPath) {
+        workspacePathInput.value = selectedPath;
+        validateForm();
+      }
+    });
+
+    setupForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      connectButton.disabled = true;
+      connectButton.textContent = "Connecting…";
+
+      await window.prismAgent.completeSetup({
+        backendUrl: backendUrlInput.value.trim(),
+        secret: secretInput.value.trim(),
+        workspaceRoots: [workspacePathInput.value.trim()],
+      });
+
+      window.close();
+    });
+  </script>
+</body>
+</html>

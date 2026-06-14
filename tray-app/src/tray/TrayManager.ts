@@ -1,0 +1,225 @@
+import { Tray, Menu, nativeImage, app, dialog, BrowserWindow, Notification } from "electron";
+import { resolve } from "node:path";
+import { agentProcess } from "../agent/AgentProcess.js";
+import { getConfiguration, setConfiguration, hasValidConfiguration } from "../config/ConfigStore.js";
+import type { AgentConnectionStatus } from "../shared/types.js";
+
+const TRAY_ICON_SIZE = 16;
+
+function getIconPath(iconName: string): string {
+  const basePath = app.isPackaged
+    ? resolve(process.resourcesPath, "assets", "tray")
+    : resolve(import.meta.dirname, "../../assets/tray");
+  return resolve(basePath, iconName);
+}
+
+function createTrayIcon(iconName: string): Electron.NativeImage {
+  const iconPath = getIconPath(iconName);
+  try {
+    const image = nativeImage.createFromPath(iconPath);
+    return image.resize({ width: TRAY_ICON_SIZE, height: TRAY_ICON_SIZE });
+  } catch {
+    return nativeImage.createEmpty();
+  }
+}
+
+const STATUS_ICONS: Record<AgentConnectionStatus, string> = {
+  connected: "tray-connected.png",
+  disconnected: "tray-disconnected.png",
+  connecting: "tray-connecting.png",
+};
+
+const STATUS_LABELS: Record<AgentConnectionStatus, string> = {
+  connected: "Connected",
+  disconnected: "Disconnected",
+  connecting: "Connecting…",
+};
+
+let tray: Tray | null = null;
+let settingsWindow: BrowserWindow | null = null;
+let currentStatus: AgentConnectionStatus = "disconnected";
+
+function buildContextMenu(): Menu {
+  const configuration = getConfiguration();
+  const isRunning = agentProcess.isRunning();
+  const isAutoLaunchEnabled = app.getLoginItemSettings().openAtLogin;
+
+  const backendLabel = configuration.backendUrl
+    ? configuration.backendUrl.replace(/^wss?:\/\//, "").replace(/\/ws\/agent$/, "")
+    : "Not configured";
+
+  return Menu.buildFromTemplate([
+    {
+      label: `Status: ${STATUS_LABELS[currentStatus]}`,
+      enabled: false,
+      icon: createTrayIcon(STATUS_ICONS[currentStatus]),
+    },
+    {
+      label: `Backend: ${backendLabel}`,
+      enabled: false,
+    },
+    { type: "separator" },
+    {
+      label: "Connect",
+      enabled: !isRunning && hasValidConfiguration(),
+      click: () => {
+        const latestConfiguration = getConfiguration();
+        agentProcess.start(latestConfiguration);
+      },
+    },
+    {
+      label: "Disconnect",
+      enabled: isRunning,
+      click: () => {
+        agentProcess.stop();
+      },
+    },
+    { type: "separator" },
+    {
+      label: "Change Workspace…",
+      click: async () => {
+        const result = await dialog.showOpenDialog({
+          title: "Select Workspace Directory",
+          properties: ["openDirectory"],
+          defaultPath: configuration.workspaceRoots[0] || undefined,
+        });
+        if (!result.canceled && result.filePaths.length > 0) {
+          setConfiguration({ workspaceRoots: result.filePaths });
+          if (isRunning) {
+            agentProcess.restart();
+          }
+          rebuildMenu();
+          showNotification("Workspace Changed", `Now syncing: ${result.filePaths[0]}`);
+        }
+      },
+    },
+    {
+      label: "Settings…",
+      click: () => openSettingsWindow(),
+    },
+    { type: "separator" },
+    {
+      label: "Open on Startup",
+      type: "checkbox",
+      checked: isAutoLaunchEnabled,
+      click: (menuItem) => {
+        app.setLoginItemSettings({
+          openAtLogin: menuItem.checked,
+          openAsHidden: true,
+          args: ["--hidden"],
+        });
+        setConfiguration({ openAtLogin: menuItem.checked });
+      },
+    },
+    { type: "separator" },
+    {
+      label: "Quit Prism Agent",
+      click: () => {
+        agentProcess.stop();
+        app.quit();
+      },
+    },
+  ]);
+}
+
+function rebuildMenu(): void {
+  if (tray) {
+    tray.setContextMenu(buildContextMenu());
+  }
+}
+
+function updateTrayIcon(status: AgentConnectionStatus): void {
+  currentStatus = status;
+  if (tray) {
+    tray.setImage(createTrayIcon(STATUS_ICONS[status]));
+    tray.setToolTip(`Prism Workspace Agent — ${STATUS_LABELS[status]}`);
+    rebuildMenu();
+  }
+}
+
+function showNotification(title: string, body: string): void {
+  if (Notification.isSupported()) {
+    new Notification({ title, body }).show();
+  }
+}
+
+function openSettingsWindow(): void {
+  if (settingsWindow) {
+    settingsWindow.focus();
+    return;
+  }
+
+  settingsWindow = new BrowserWindow({
+    width: 520,
+    height: 580,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    title: "Prism Workspace Agent — Settings",
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: resolve(import.meta.dirname, "../windows/settings/settings-preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  const settingsHtmlPath = app.isPackaged
+    ? resolve(import.meta.dirname, "../windows/settings/settings.html")
+    : resolve(import.meta.dirname, "../windows/settings/settings.html");
+  settingsWindow.loadFile(settingsHtmlPath);
+
+  settingsWindow.on("closed", () => {
+    settingsWindow = null;
+  });
+}
+
+export function openSetupWindow(): Promise<void> {
+  return new Promise((resolvePromise) => {
+    const setupWindow = new BrowserWindow({
+      width: 500,
+      height: 520,
+      resizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      title: "Prism Workspace Agent — Setup",
+      autoHideMenuBar: true,
+      webPreferences: {
+        preload: resolve(import.meta.dirname, "../windows/setup/setup-preload.js"),
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+
+    const setupHtmlPath = app.isPackaged
+      ? resolve(import.meta.dirname, "../windows/setup/setup.html")
+      : resolve(import.meta.dirname, "../windows/setup/setup.html");
+    setupWindow.loadFile(setupHtmlPath);
+
+    setupWindow.on("closed", () => {
+      resolvePromise();
+    });
+  });
+}
+
+export function initializeTray(): void {
+  tray = new Tray(createTrayIcon(STATUS_ICONS.disconnected));
+  tray.setToolTip("Prism Workspace Agent — Disconnected");
+  tray.setContextMenu(buildContextMenu());
+
+  agentProcess.on("status-changed", (status: AgentConnectionStatus) => {
+    updateTrayIcon(status);
+
+    if (status === "connected") {
+      showNotification("Prism Agent", "Workspace connected successfully");
+    } else if (status === "disconnected" && currentStatus === "connected") {
+      showNotification("Prism Agent", "Workspace disconnected");
+    }
+  });
+
+  if (process.platform === "win32") {
+    tray.on("click", () => {
+      tray?.popUpContextMenu();
+    });
+  }
+}

@@ -15,3 +15,8 @@ vscode-extension/*.vsix
 # TypeScript build artifacts
 dist/
 *.tsbuildinfo
+
+# Tray App
+tray-app/node_modules/
+tray-app/out/
+tray-app/dist/

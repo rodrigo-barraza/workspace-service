@@ -1,0 +1,51 @@
+appId: dev.rod.prism.workspace-agent
+productName: Prism Workspace Agent
+copyright: Copyright © 2026 Rodrigo Barraza
+
+directories:
+  output: dist
+  buildResources: assets
+
+files:
+  - "out/**/*"
+  - "assets/**/*"
+  - "!node_modules/**/*.md"
+  - "!node_modules/**/*.d.ts"
+  - "!node_modules/**/*.map"
+
+extraResources:
+  - from: "../standalone/workspace-agent-core.mjs"
+    to: "workspace-agent-core.mjs"
+
+win:
+  target: nsis
+  icon: assets/icon.ico
+
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  runAfterFinish: true
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  icon: assets/icon.icns
+  category: public.app-category.utilities
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+linux:
+  target: AppImage
+  icon: assets/icon.png
+  category: Utility

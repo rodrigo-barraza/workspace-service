@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline';">
+  <title>Prism Workspace Agent — Settings</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="settings.css">
+</head>
+<body>
+  <main class="settings-container">
+    <header class="settings-header">
+      <h1 class="settings-title">Settings</h1>
+      <div class="connection-status-indicator" id="connection-status-indicator">
+        <span class="status-dot" id="status-dot"></span>
+        <span class="status-label" id="status-label">Disconnected</span>
+      </div>
+    </header>
+
+    <!-- Tab Bar -->
+    <nav class="tab-bar" role="tablist">
+      <button class="tab-button is-active-state" data-tab="connection" role="tab" aria-selected="true">Connection</button>
+      <button class="tab-button" data-tab="general" role="tab" aria-selected="false">General</button>
+      <button class="tab-button" data-tab="logs" role="tab" aria-selected="false">Logs</button>
+    </nav>
+
+    <!-- Connection Tab -->
+    <section class="tab-panel is-visible-state" id="tab-panel-connection" role="tabpanel">
+      <div class="form-field">
+        <label class="field-label" for="settings-backend-url">Backend URL</label>
+        <input type="url" id="settings-backend-url" class="field-input" placeholder="wss://api.tools.rod.dev">
+      </div>
+
+      <div class="form-field">
+        <label class="field-label" for="settings-secret">API Secret</label>
+        <input type="password" id="settings-secret" class="field-input" placeholder="Enter API secret">
+      </div>
+
+      <div class="form-field">
+        <label class="field-label">Workspace Folder</label>
+        <div class="folder-field-wrapper">
+          <input type="text" id="settings-workspace-path" class="field-input" placeholder="Select a directory…" readonly>
+          <button type="button" id="settings-browse-button" class="browse-button">Browse…</button>
+        </div>
+      </div>
+
+      <div class="form-field">
+        <label class="field-label" for="settings-agent-name">Agent Name</label>
+        <input type="text" id="settings-agent-name" class="field-input" placeholder="e.g. my-laptop">
+      </div>
+
+      <div class="button-row">
+        <button id="save-connection-button" class="action-button primary-action-button">Save & Reconnect</button>
+        <button id="disconnect-button" class="action-button secondary-action-button">Disconnect</button>
+      </div>
+    </section>
+
+    <!-- General Tab -->
+    <section class="tab-panel" id="tab-panel-general" role="tabpanel">
+      <div class="toggle-row">
+        <div class="toggle-label-group">
+          <span class="toggle-title">Open on Startup</span>
+          <span class="toggle-description">Automatically start the agent when you log in</span>
+        </div>
+        <label class="switch-element">
+          <input type="checkbox" id="auto-launch-toggle">
+          <span class="switch-slider"></span>
+        </label>
+      </div>
+
+      <div class="divider-line"></div>
+
+      <div class="button-row">
+        <button id="reset-config-button" class="action-button danger-action-button">Reset All Settings</button>
+      </div>
+    </section>
+
+    <!-- Logs Tab -->
+    <section class="tab-panel" id="tab-panel-logs" role="tabpanel">
+      <div class="log-viewer-container" id="log-viewer-container">
+        <pre class="log-output" id="log-output">No logs yet.</pre>
+      </div>
+      <div class="button-row">
+        <button id="refresh-logs-button" class="action-button secondary-action-button">Refresh</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const tabButtons = document.querySelectorAll(".tab-button");
+    const tabPanels = document.querySelectorAll(".tab-panel");
+
+    tabButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const targetTab = button.dataset.tab;
+        tabButtons.forEach((tabButton) => {
+          tabButton.classList.remove("is-active-state");
+          tabButton.setAttribute("aria-selected", "false");
+        });
+        tabPanels.forEach((panel) => panel.classList.remove("is-visible-state"));
+        button.classList.add("is-active-state");
+        button.setAttribute("aria-selected", "true");
+        document.getElementById(`tab-panel-${targetTab}`).classList.add("is-visible-state");
+      });
+    });
+
+    const backendUrlInput = document.getElementById("settings-backend-url");
+    const secretInput = document.getElementById("settings-secret");
+    const workspacePathInput = document.getElementById("settings-workspace-path");
+    const agentNameInput = document.getElementById("settings-agent-name");
+    const browseButton = document.getElementById("settings-browse-button");
+    const saveButton = document.getElementById("save-connection-button");
+    const disconnectButton = document.getElementById("disconnect-button");
+    const autoLaunchToggle = document.getElementById("auto-launch-toggle");
+    const resetButton = document.getElementById("reset-config-button");
+    const refreshLogsButton = document.getElementById("refresh-logs-button");
+    const logOutput = document.getElementById("log-output");
+    const statusDot = document.getElementById("status-dot");
+    const statusLabel = document.getElementById("status-label");
+
+    async function loadConfiguration() {
+      const configuration = await window.prismAgent.getConfig();
+      backendUrlInput.value = configuration.backendUrl || "";
+      secretInput.value = configuration.secret || "";
+      workspacePathInput.value = (configuration.workspaceRoots || [])[0] || "";
+      agentNameInput.value = configuration.agentName || "";
+
+      const isAutoLaunch = await window.prismAgent.getAutoLaunch();
+      autoLaunchToggle.checked = isAutoLaunch;
+
+      await updateStatus();
+    }
+
+    async function updateStatus() {
+      const status = await window.prismAgent.agentStatus();
+      statusDot.className = `status-dot ${status.connectionStatus}`;
+      const labelMap = { connected: "Connected", disconnected: "Disconnected", connecting: "Connecting…" };
+      statusLabel.textContent = labelMap[status.connectionStatus] || "Unknown";
+    }
+
+    browseButton.addEventListener("click", async () => {
+      const selectedPath = await window.prismAgent.openFolderDialog();
+      if (selectedPath) {
+        workspacePathInput.value = selectedPath;
+      }
+    });
+
+    saveButton.addEventListener("click", async () => {
+      saveButton.disabled = true;
+      saveButton.textContent = "Saving…";
+      await window.prismAgent.setConfig({
+        backendUrl: backendUrlInput.value.trim(),
+        secret: secretInput.value.trim(),
+        workspaceRoots: [workspacePathInput.value.trim()],
+        agentName: agentNameInput.value.trim(),
+      });
+      await window.prismAgent.agentRestart();
+      saveButton.textContent = "Save & Reconnect";
+      saveButton.disabled = false;
+      setTimeout(updateStatus, 1000);
+    });
+
+    disconnectButton.addEventListener("click", async () => {
+      await window.prismAgent.agentStop();
+      setTimeout(updateStatus, 500);
+    });
+
+    autoLaunchToggle.addEventListener("change", async () => {
+      await window.prismAgent.setAutoLaunch(autoLaunchToggle.checked);
+    });
+
+    resetButton.addEventListener("click", async () => {
+      if (confirm("Reset all settings? The agent will disconnect and you will need to reconfigure.")) {
+        await window.prismAgent.agentStop();
+        await window.prismAgent.resetConfig();
+        await loadConfiguration();
+      }
+    });
+
+    refreshLogsButton.addEventListener("click", async () => {
+      const logs = await window.prismAgent.getLogs();
+      if (logs.length === 0) {
+        logOutput.textContent = "No logs yet.";
+        return;
+      }
+      const levelColors = { info: "#7aa2f7", success: "#9ece6a", warn: "#e0af68", error: "#f7768e", rpc: "#bb9af7" };
+      logOutput.innerHTML = logs.map((entry) => {
+        const time = entry.timestamp.slice(11, 23);
+        const color = levelColors[entry.level] || "#a9b1d6";
+        const escapedMessage = entry.message.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        return `<span style="color:#565f89">${time}</span> <span style="color:${color}">${entry.level.toUpperCase().padEnd(7)}</span> ${escapedMessage}`;
+      }).join("\n");
+      const logViewerContainer = document.getElementById("log-viewer-container");
+      logViewerContainer.scrollTop = logViewerContainer.scrollHeight;
+    });
+
+    setInterval(updateStatus, 5000);
+    loadConfiguration();
+  </script>
+</body>
+</html>

@@ -1,0 +1,375 @@
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --background-primary: oklch(0.15 0.01 260);
+  --background-secondary: oklch(0.18 0.012 260);
+  --background-tertiary: oklch(0.22 0.015 260);
+  --surface-elevated: oklch(0.2 0.013 260);
+  --text-primary: oklch(0.93 0.005 260);
+  --text-secondary: oklch(0.65 0.01 260);
+  --text-muted: oklch(0.5 0.01 260);
+  --border-subtle: oklch(0.28 0.015 260);
+  --border-focused: oklch(0.55 0.15 270);
+  --accent-primary: oklch(0.65 0.2 270);
+  --accent-glow: oklch(0.65 0.2 270 / 0.15);
+  --input-background: oklch(0.12 0.008 260);
+  --danger-color: oklch(0.6 0.2 25);
+  --danger-hover: oklch(0.55 0.2 25);
+  --success-color: oklch(0.65 0.2 145);
+  --warning-color: oklch(0.7 0.15 80);
+  --connecting-color: oklch(0.65 0.15 60);
+  --radius-small: 6px;
+  --radius-medium: 10px;
+  --transition-standard: 180ms ease;
+  --font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+}
+
+html, body {
+  height: 100%;
+  font-family: var(--font-family);
+  font-size: 13px;
+  background: var(--background-primary);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  overflow: hidden;
+}
+
+.settings-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 20px 24px;
+}
+
+/* ── Header ─────────────────────────────────────────────── */
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-block-end: 16px;
+}
+
+.settings-title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.connection-status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-subtle);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: background var(--transition-standard);
+}
+
+.status-dot.connected {
+  background: var(--success-color);
+  box-shadow: 0 0 6px var(--success-color);
+}
+
+.status-dot.disconnected {
+  background: oklch(0.55 0.15 15);
+}
+
+.status-dot.connecting {
+  background: var(--connecting-color);
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.status-label {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+/* ── Tab Bar ────────────────────────────────────────────── */
+
+.tab-bar {
+  display: flex;
+  gap: 2px;
+  margin-block-end: 20px;
+  background: var(--background-secondary);
+  border-radius: var(--radius-small);
+  padding: 3px;
+}
+
+.tab-button {
+  flex: 1;
+  height: 30px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-family);
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color var(--transition-standard), background var(--transition-standard);
+}
+
+.tab-button:hover {
+  color: var(--text-secondary);
+}
+
+.tab-button.is-active-state {
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  box-shadow: 0 1px 3px oklch(0 0 0 / 0.2);
+}
+
+/* ── Tab Panels ─────────────────────────────────────────── */
+
+.tab-panel {
+  display: none;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.tab-panel.is-visible-state {
+  display: flex;
+}
+
+/* ── Form Fields ────────────────────────────────────────── */
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.field-input {
+  width: 100%;
+  height: 36px;
+  padding-inline: 10px;
+  font-size: 12.5px;
+  font-family: var(--font-family);
+  color: var(--text-primary);
+  background: var(--input-background);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-small);
+  outline: none;
+  transition: border-color var(--transition-standard), box-shadow var(--transition-standard);
+}
+
+.field-input:focus {
+  border-color: var(--border-focused);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.field-input::placeholder {
+  color: var(--text-muted);
+}
+
+.folder-field-wrapper {
+  display: flex;
+  gap: 6px;
+}
+
+.folder-field-wrapper .field-input {
+  flex: 1;
+  cursor: pointer;
+}
+
+.browse-button {
+  height: 36px;
+  padding-inline: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-family);
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-standard);
+}
+
+.browse-button:hover {
+  background: var(--background-tertiary);
+}
+
+/* ── Buttons ────────────────────────────────────────────── */
+
+.button-row {
+  display: flex;
+  gap: 8px;
+  margin-block-start: auto;
+  padding-block-start: 10px;
+}
+
+.action-button {
+  flex: 1;
+  height: 36px;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: var(--font-family);
+  border: none;
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  transition: opacity var(--transition-standard), transform 120ms ease;
+}
+
+.action-button:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.action-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.primary-action-button {
+  color: oklch(1 0 0);
+  background: linear-gradient(135deg, oklch(0.55 0.2 270), oklch(0.5 0.18 300));
+  box-shadow: 0 2px 8px oklch(0.55 0.2 270 / 0.25);
+}
+
+.secondary-action-button {
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-subtle);
+}
+
+.danger-action-button {
+  color: oklch(1 0 0);
+  background: var(--danger-color);
+}
+
+.danger-action-button:hover:not(:disabled) {
+  background: var(--danger-hover);
+}
+
+/* ── Toggle / Switch ────────────────────────────────────── */
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-block: 8px;
+}
+
+.toggle-label-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toggle-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.toggle-description {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.switch-element {
+  position: relative;
+  display: inline-block;
+  width: 38px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+.switch-element input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--background-tertiary);
+  border-radius: 11px;
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: background var(--transition-standard), border-color var(--transition-standard);
+}
+
+.switch-slider::before {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  inset-inline-start: 2px;
+  inset-block-end: 2px;
+  background: var(--text-primary);
+  border-radius: 50%;
+  transition: transform var(--transition-standard);
+}
+
+.switch-element input:checked + .switch-slider {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+}
+
+.switch-element input:checked + .switch-slider::before {
+  transform: translateX(16px);
+}
+
+.divider-line {
+  height: 1px;
+  background: var(--border-subtle);
+  margin-block: 4px;
+}
+
+/* ── Logs ────────────────────────────────────────────────── */
+
+.log-viewer-container {
+  flex: 1;
+  overflow-y: auto;
+  background: oklch(0.1 0.005 260);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-small);
+  padding: 10px;
+  min-height: 200px;
+}
+
+.log-output {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
