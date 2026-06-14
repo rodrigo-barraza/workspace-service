@@ -18,11 +18,13 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 import { readFile, writeFile, stat, readdir, mkdir, rename, unlink } from "node:fs/promises";
-import { resolve, relative, extname, dirname, basename } from "node:path";
+import { resolve, relative, extname, dirname, basename, join } from "node:path";
 import { existsSync, statSync } from "node:fs";
-import { hostname } from "node:os";
-import { spawn } from "node:child_process";
+import { hostname, homedir } from "node:os";
+import { spawn, execSync } from "node:child_process";
 import crypto from "node:crypto";
+import readline from "node:readline";
+
 
 // ────────────────────────────────────────────────────────────
 // Logger
@@ -747,45 +749,178 @@ function showHelp() {
   `);
 }
 
-const cliOptions = parseArgs();
+const AGENT_CONFIG_FILE_PATH = join(homedir(), ".prism-workspace-agent.json");
 
-if (cliOptions.help) { showHelp(); process.exit(0); }
-
-let backendUrl = cliOptions.backend || process.env.WORKSPACE_BACKEND;
-if (!backendUrl) { logger.error("Missing --backend flag or WORKSPACE_BACKEND env var. Use --help for usage."); process.exit(1); }
-
-let workspacePaths = cliOptions.workspace || (process.env.WORKSPACE_ROOTS ? process.env.WORKSPACE_ROOTS.split(",").map((text) => text.trim()).filter(Boolean) : []);
-if (workspacePaths.length === 0) { logger.error("Missing --workspace flag or WORKSPACE_ROOTS env var. Use --help for usage."); process.exit(1); }
-
-const roots = workspacePaths.map((path) => resolve(path));
-for (const root of roots) {
-  if (!existsSync(root)) { logger.error(`Workspace path does not exist: ${root}`); process.exit(1); }
-  if (!statSync(root).isDirectory()) { logger.error(`Workspace path is not a directory: ${root}`); process.exit(1); }
+async function readPersistentConfiguration() {
+  try {
+    if (existsSync(AGENT_CONFIG_FILE_PATH)) {
+      const configurationData = await readFile(AGENT_CONFIG_FILE_PATH, "utf-8");
+      return JSON.parse(configurationData);
+    }
+  } catch (error) {
+    logger.warn(`Failed to read config file: ${error.message}`);
+  }
+  return null;
 }
 
-if (backendUrl.startsWith("http://")) backendUrl = backendUrl.replace("http://", "ws://");
-else if (backendUrl.startsWith("https://")) backendUrl = backendUrl.replace("https://", "wss://");
-if (!backendUrl.includes("/ws/agent")) backendUrl = backendUrl.replace(/\/+$/, "") + "/ws/agent";
-
-const secret = cliOptions.secret || process.env.WORKSPACE_SERVICE_SECRET || "";
-const agentName = cliOptions.name || hostname();
-
-logger.info("━━━ Workspace Agent ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-logger.info(`Name ............. ${agentName}`);
-logger.info(`Backend .......... ${backendUrl}`);
-logger.info(`Workspaces ....... ${roots.join(", ")}`);
-logger.info(`Auth ............. ${secret ? "secret configured" : "none"}`);
-logger.info(`Platform ......... ${process.platform} (Node ${process.version})`);
-logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-
-const agent = new WorkspaceAgent({ backendUrl, roots, name: agentName, secret });
-agent.connect();
-
-function shutdown(signal) {
-  logger.info(`Received ${signal}, shutting down…`);
-  agent.disconnect();
-  setTimeout(() => process.exit(0), 500);
+async function writePersistentConfiguration(configuration) {
+  try {
+    await mkdir(dirname(AGENT_CONFIG_FILE_PATH), { recursive: true });
+    await writeFile(AGENT_CONFIG_FILE_PATH, JSON.stringify(configuration, null, 2), "utf-8");
+    logger.success(`Saved configuration to ${AGENT_CONFIG_FILE_PATH}`);
+  } catch (error) {
+    logger.warn(`Failed to save config file: ${error.message}`);
+  }
 }
 
-process.on("SIGINT", () => shutdown("SIGINT"));
-process.on("SIGTERM", () => shutdown("SIGTERM"));
+function promptUserQuestion(questionText) {
+  const readlineInterface = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  return new Promise((resolvePromise) => {
+    readlineInterface.question(questionText, (userAnswer) => {
+      readlineInterface.close();
+      resolvePromise(userAnswer.trim());
+    });
+  });
+}
+
+function selectDirectoryViaNativeDialog() {
+  const currentPlatform = process.platform;
+  try {
+    if (currentPlatform === "win32") {
+      const powershellScript = `
+        Add-Type -AssemblyName System.Windows.Forms
+        $folderBrowser = New-Object System.Windows.Forms.FolderBrowserDialog
+        $folderBrowser.Description = "Select workspace directory to sync with Prism"
+        $folderBrowser.ShowNewFolderButton = $true
+        if ($folderBrowser.ShowDialog() -eq "OK") { $folderBrowser.SelectedPath }
+      `;
+      const sanitizedScript = powershellScript.replace(/\n/g, ";");
+      const pathResult = execSync(`powershell -NoProfile -Command "${sanitizedScript}"`, { encoding: "utf-8" }).trim();
+      return pathResult || null;
+    } else if (currentPlatform === "darwin") {
+      const appleScriptCommand = `POSIX path of (choose folder with prompt "Select workspace directory to sync with Prism:")`;
+      const pathResult = execSync(`osascript -e '${appleScriptCommand}'`, { encoding: "utf-8" }).trim();
+      return pathResult || null;
+    } else if (currentPlatform === "linux") {
+      try {
+        const pathResult = execSync('zenity --file-selection --directory --title="Select workspace directory to sync with Prism"', { encoding: "utf-8" }).trim();
+        return pathResult || null;
+      } catch (error) {
+        return null;
+      }
+    }
+  } catch (error) {
+    return null;
+  }
+  return null;
+}
+
+async function runInteractiveConfigurationWizard() {
+  logger.info("No configuration found. Starting setup wizard…");
+
+  let backendUrlInput = await promptUserQuestion("Enter Prism Backend WebSocket URL (default: wss://api.tools.rod.dev): ");
+  if (!backendUrlInput) {
+    backendUrlInput = "wss://api.tools.rod.dev";
+  }
+
+  let secretInput = await promptUserQuestion("Enter your Prism API Access Token/Secret: ");
+  while (!secretInput) {
+    logger.warn("API Secret is required to connect to Prism.");
+    secretInput = await promptUserQuestion("Enter your Prism API Access Token/Secret: ");
+  }
+
+  logger.info("Opening folder selection dialog…");
+  let selectedWorkspaceFolder = selectDirectoryViaNativeDialog();
+
+  if (selectedWorkspaceFolder) {
+    logger.success(`Selected workspace directory: ${selectedWorkspaceFolder}`);
+  } else {
+    logger.info("No folder was selected from the dialog. Please enter the directory path manually.");
+    const defaultWorkspacePath = resolve(process.cwd());
+    const manualWorkspaceInput = await promptUserQuestion(`Enter local workspace directory path (default: ${defaultWorkspacePath}): `);
+    selectedWorkspaceFolder = manualWorkspaceInput ? resolve(manualWorkspaceInput) : defaultWorkspacePath;
+  }
+
+  while (!existsSync(selectedWorkspaceFolder) || !statSync(selectedWorkspaceFolder).isDirectory()) {
+    logger.error(`Workspace directory does not exist or is not a directory: ${selectedWorkspaceFolder}`);
+    const manualWorkspaceInput = await promptUserQuestion("Enter workspace directory path: ");
+    if (!manualWorkspaceInput) {
+      continue;
+    }
+    selectedWorkspaceFolder = resolve(manualWorkspaceInput);
+  }
+
+  const configuration = {
+    backend: backendUrlInput,
+    secret: secretInput,
+    workspace: [selectedWorkspaceFolder],
+  };
+
+  await writePersistentConfiguration(configuration);
+  return configuration;
+}
+
+async function main() {
+  const cliOptions = parseArgs();
+
+  if (cliOptions.help) { showHelp(); process.exit(0); }
+
+  let backendUrl = cliOptions.backend || process.env.WORKSPACE_BACKEND;
+  let workspacePaths = cliOptions.workspace || (process.env.WORKSPACE_ROOTS ? process.env.WORKSPACE_ROOTS.split(",").map((text) => text.trim()).filter(Boolean) : []);
+  let secret = cliOptions.secret || process.env.WORKSPACE_SERVICE_SECRET;
+
+  const isConfigurationMissing = !backendUrl && workspacePaths.length === 0 && !secret;
+  if (isConfigurationMissing) {
+    let configuration = await readPersistentConfiguration();
+    if (!configuration) {
+      configuration = await runInteractiveConfigurationWizard();
+    }
+    backendUrl = configuration.backend;
+    workspacePaths = configuration.workspace;
+    secret = configuration.secret;
+  }
+
+  if (!backendUrl) { logger.error("Missing --backend flag, env var, or configuration. Use --help for usage."); process.exit(1); }
+  if (!workspacePaths || workspacePaths.length === 0) { logger.error("Missing --workspace flag, env var, or configuration. Use --help for usage."); process.exit(1); }
+
+  const roots = workspacePaths.map((path) => resolve(path));
+  for (const root of roots) {
+    if (!existsSync(root)) { logger.error(`Workspace path does not exist: ${root}`); process.exit(1); }
+    if (!statSync(root).isDirectory()) { logger.error(`Workspace path is not a directory: ${root}`); process.exit(1); }
+  }
+
+  if (backendUrl.startsWith("http://")) backendUrl = backendUrl.replace("http://", "ws://");
+  else if (backendUrl.startsWith("https://")) backendUrl = backendUrl.replace("https://", "wss://");
+  if (!backendUrl.includes("/ws/agent")) backendUrl = backendUrl.replace(/\/+$/, "") + "/ws/agent";
+
+  secret = secret || "";
+  const agentName = cliOptions.name || hostname();
+
+  logger.info("━━━ Workspace Agent ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  logger.info(`Name ............. ${agentName}`);
+  logger.info(`Backend .......... ${backendUrl}`);
+  logger.info(`Workspaces ....... ${roots.join(", ")}`);
+  logger.info(`Auth ............. ${secret ? "secret configured" : "none"}`);
+  logger.info(`Platform ......... ${process.platform} (Node ${process.version})`);
+  logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+  const agent = new WorkspaceAgent({ backendUrl, roots, name: agentName, secret });
+  agent.connect();
+
+  function shutdown(signal) {
+    logger.info(`Received ${signal}, shutting down…`);
+    agent.disconnect();
+    setTimeout(() => process.exit(0), 500);
+  }
+
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+}
+
+main().catch((error) => {
+  logger.error(`Failed to start workspace agent: ${error.message}`);
+  process.exit(1);
+});
