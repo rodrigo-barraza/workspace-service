@@ -32,11 +32,7 @@ export class AgentProcess extends EventEmitter {
     else if (backendUrl.startsWith("https://")) backendUrl = backendUrl.replace("https://", "wss://");
     if (!backendUrl.includes("/ws/agent")) backendUrl = backendUrl.replace(/\/+$/, "") + "/ws/agent";
 
-    const agentScriptPath = resolve(
-      app.isPackaged
-        ? resolve(process.resourcesPath, "agent-runner.mjs")
-        : resolve(import.meta.dirname, "../agent/agent-runner.mjs")
-    );
+    const agentScriptPath = resolve(import.meta.dirname, "./agent-runner.mjs");
 
     this.childProcess = fork(agentScriptPath, [], {
       stdio: ["pipe", "pipe", "pipe", "ipc"],

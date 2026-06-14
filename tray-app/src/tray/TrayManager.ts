@@ -7,10 +7,7 @@ import type { AgentConnectionStatus } from "../shared/types.js";
 const TRAY_ICON_SIZE = 16;
 
 function getIconPath(iconName: string): string {
-  const basePath = app.isPackaged
-    ? resolve(process.resourcesPath, "assets", "tray")
-    : resolve(import.meta.dirname, "../../assets/tray");
-  return resolve(basePath, iconName);
+  return resolve(import.meta.dirname, "../../assets/tray", iconName);
 }
 
 function createTrayIcon(iconName: string): Electron.NativeImage {
@@ -164,9 +161,7 @@ function openSettingsWindow(): void {
     },
   });
 
-  const settingsHtmlPath = app.isPackaged
-    ? resolve(import.meta.dirname, "../windows/settings/settings.html")
-    : resolve(import.meta.dirname, "../windows/settings/settings.html");
+  const settingsHtmlPath = resolve(import.meta.dirname, "../windows/settings/settings.html");
   settingsWindow.loadFile(settingsHtmlPath);
 
   settingsWindow.on("closed", () => {
@@ -191,9 +186,7 @@ export function openSetupWindow(): Promise<void> {
       },
     });
 
-    const setupHtmlPath = app.isPackaged
-      ? resolve(import.meta.dirname, "../windows/setup/setup.html")
-      : resolve(import.meta.dirname, "../windows/setup/setup.html");
+    const setupHtmlPath = resolve(import.meta.dirname, "../windows/setup/setup.html");
     setupWindow.loadFile(setupHtmlPath);
 
     setupWindow.on("closed", () => {
@@ -208,11 +201,12 @@ export function initializeTray(): void {
   tray.setContextMenu(buildContextMenu());
 
   agentProcess.on("status-changed", (status: AgentConnectionStatus) => {
+    const previousStatus = currentStatus;
     updateTrayIcon(status);
 
     if (status === "connected") {
       showNotification("Prism Agent", "Workspace connected successfully");
-    } else if (status === "disconnected" && currentStatus === "connected") {
+    } else if (status === "disconnected" && previousStatus === "connected") {
       showNotification("Prism Agent", "Workspace disconnected");
     }
   });
