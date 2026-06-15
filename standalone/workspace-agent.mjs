@@ -30,14 +30,14 @@ import { WorkspaceAgent, hostname } from "./workspace-agent-core.mjs";
 // Logger (thin — just for CLI output in this wrapper)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-const COLORS = { reset: "\x1b[0m", dim: "\x1b[2m", red: "\x1b[31m", green: "\x1b[32m", yellow: "\x1b[33m", blue: "\x1b[34m" };
+const CLI_COLORS = { reset: "\x1b[0m", dim: "\x1b[2m", red: "\x1b[31m", green: "\x1b[32m", yellow: "\x1b[33m", blue: "\x1b[34m" };
 
-function timestamp() { return new Date().toISOString().slice(11, 23); }
+function cliTimestamp() { return new Date().toISOString().slice(11, 23); }
 const logger = {
-  info:    (message) => console.log(`${COLORS.dim}${timestamp()}${COLORS.reset} ${COLORS.blue}INFO${COLORS.reset}  ${message}`),
-  success: (message) => console.log(`${COLORS.dim}${timestamp()}${COLORS.reset} ${COLORS.green}  OK${COLORS.reset}  ${message}`),
-  warn:    (message) => console.log(`${COLORS.dim}${timestamp()}${COLORS.reset} ${COLORS.yellow}WARN${COLORS.reset}  ${message}`),
-  error:   (message) => console.log(`${COLORS.dim}${timestamp()}${COLORS.reset} ${COLORS.red} ERR${COLORS.reset}  ${message}`),
+  info:    (message) => console.log(`${CLI_COLORS.dim}${cliTimestamp()}${CLI_COLORS.reset} ${CLI_COLORS.blue}INFO${CLI_COLORS.reset}  ${message}`),
+  success: (message) => console.log(`${CLI_COLORS.dim}${cliTimestamp()}${CLI_COLORS.reset} ${CLI_COLORS.green}  OK${CLI_COLORS.reset}  ${message}`),
+  warn:    (message) => console.log(`${CLI_COLORS.dim}${cliTimestamp()}${CLI_COLORS.reset} ${CLI_COLORS.yellow}WARN${CLI_COLORS.reset}  ${message}`),
+  error:   (message) => console.log(`${CLI_COLORS.dim}${cliTimestamp()}${CLI_COLORS.reset} ${CLI_COLORS.red} ERR${CLI_COLORS.reset}  ${message}`),
 };
 
 async function waitForKeypressBeforeExit() {
