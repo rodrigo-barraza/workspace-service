@@ -38,6 +38,26 @@ info()    { printf '%s  ℹ %s%s\n' "$CYAN" "$1" "$RESET"; }
 ok()      { printf '%s  ✔ %s%s\n' "$GREEN" "$1" "$RESET"; }
 warn()    { printf '%s  ⚠ %s%s\n' "$YELLOW" "$1" "$RESET"; }
 fail()    { printf '%s  ✖ %s%s\n' "$RED" "$1" "$RESET"; exit 1; }
+
+# ── Wine prerequisite (cross-compile Windows NSIS from Linux) ─
+ensure_wine_installed() {
+  if command -v wine64 >/dev/null 2>&1 || command -v wine >/dev/null 2>&1; then
+    return 0
+  fi
+
+  info "Wine not found — installing for Windows cross-compilation..."
+  sudo dpkg --add-architecture i386 2>&1 | tail -1
+  sudo apt-get update -qq 2>&1 | tail -1
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq wine64 wine32 2>&1 | tail -5
+
+  if command -v wine64 >/dev/null 2>&1 || command -v wine >/dev/null 2>&1; then
+    ok "Wine installed successfully"
+  else
+    warn "Wine installation failed — Windows installer will be skipped"
+    return 1
+  fi
+}
+
 step()    { printf '\n%s%s━━━ %s%s\n' "$BOLD" "$CYAN" "$1" "$RESET"; }
 
 # ── Parse flags ───────────────────────────────────────────────
@@ -56,21 +76,20 @@ for arg in "$@"; do
 done
 
 # Default to current platform if none specified
+# On WSL2, build both Windows + Linux since the deploy serves all platforms.
 if [ -z "$PLATFORM" ] && ! $BUILD_ALL; then
-  case "$(uname -s)" in
-    Linux*)   PLATFORM="linux" ;;
-    Darwin*)  PLATFORM="mac" ;;
-    MINGW*|MSYS*|CYGWIN*) PLATFORM="win" ;;
-    *)
-      # WSL2 detection
-      if grep -qi microsoft /proc/version 2>/dev/null; then
-        PLATFORM="win"
-      else
-        PLATFORM="linux"
-      fi
-      ;;
-  esac
-  info "Auto-detected platform: ${PLATFORM}"
+  if grep -qi microsoft /proc/version 2>/dev/null; then
+    BUILD_ALL=true
+    info "Auto-detected WSL2 — building for all platforms (win + linux)"
+  else
+    case "$(uname -s)" in
+      Linux*)   PLATFORM="linux" ;;
+      Darwin*)  PLATFORM="mac" ;;
+      MINGW*|MSYS*|CYGWIN*) PLATFORM="win" ;;
+      *) PLATFORM="linux" ;;
+    esac
+    info "Auto-detected platform: ${PLATFORM}"
+  fi
 fi
 
 # ── Build ─────────────────────────────────────────────────────
@@ -83,9 +102,20 @@ if ! $UPLOAD_ONLY; then
   npm run build 2>&1 | tail -5
 
   step "Building installers"
+
+  # Ensure Wine is available when building Windows targets on Linux/WSL2
+  if { $BUILD_ALL || [[ "$PLATFORM" =~ ^(win|win-x64|windows)$ ]]; } && [ "$(uname -s)" = "Linux" ]; then
+    ensure_wine_installed || true
+  fi
+
   if $BUILD_ALL; then
-    info "Building for all platforms (requires Wine for Windows on Linux)"
-    npm run dist 2>&1 | tail -20
+    info "Building for all platforms"
+    npm run dist:linux 2>&1 | tail -20
+    if command -v wine64 >/dev/null 2>&1 || command -v wine >/dev/null 2>&1; then
+      npm run dist:win 2>&1 | tail -20
+    else
+      warn "Skipping Windows build — Wine not available"
+    fi
   else
     case "$PLATFORM" in
       win|win-x64|windows)
