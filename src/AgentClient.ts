@@ -3,6 +3,7 @@
 import WebSocket from "ws";
 import crypto from "node:crypto";
 import { watch } from "node:fs";
+import os from "node:os";
 import { resolve } from "node:path";
 import logger from "./logger.ts";
 import { FileHandler } from "./handlers/FileHandler.ts";
@@ -194,6 +195,9 @@ export class AgentClient {
   // ──────────────────────────────────────────────────────────
 
   _register() {
+    const cpuModels = os.cpus();
+    const primaryCpuModel = cpuModels.length > 0 ? cpuModels[0].model.trim() : "unknown";
+
     this._send({
       jsonrpc: "2.0",
       method: "agent.register",
@@ -203,6 +207,16 @@ export class AgentClient {
         roots: this.roots,
         capabilities: ["file", "git", "command", "project"],
         version: "0.1.0",
+        hostInfo: {
+          hostname: os.hostname(),
+          platform: os.platform(),
+          arch: os.arch(),
+          release: os.release(),
+          username: os.userInfo().username,
+          cpuModel: primaryCpuModel,
+          cpuCores: cpuModels.length,
+          totalMemoryBytes: os.totalmem(),
+        },
       },
     });
     logger.info(`Registered agent "${this.name}" with ${this.roots.length} root(s)`);
