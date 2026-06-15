@@ -107,6 +107,141 @@ node dist/bin/workspace-service.js \
 | **Git / Shell** | Must be installed in the container | Uses your host environment directly |
 | **Use case** | Headless servers, Synology, always-on | Local development, WSL2, workstations |
 
+## Standalone Agent (Windows / macOS / Linux)
+
+The standalone agent is a **Single Executable Application (SEA)** — a self-contained binary with Node.js and the agent code baked in. No Node.js installation required on the target machine.
+
+### Downloading
+
+The tools-service compiles and serves the standalone binary on demand:
+
+```
+GET https://api.tools.rod.dev/agents/download/agent?platform=<platform>
+```
+
+| Platform | Value | Output |
+|---|---|---|
+| Windows x64 | `win-x64` | `workspace-agent.exe` |
+| Linux x64 | `linux-x64` | `workspace-agent` |
+| macOS x64 | `mac-x64` | `workspace-agent` |
+| macOS ARM | `mac-arm64` | `workspace-agent` |
+
+Example:
+
+```bash
+# Download the Windows binary
+curl -o workspace-agent.exe "https://api.tools.rod.dev/agents/download/agent?platform=win-x64"
+```
+
+> **Note:** The backend URL and API secret are pre-baked into the binary at compile time. No manual configuration of those values is needed.
+
+### First Run
+
+On first launch, the agent runs an interactive **setup wizard** that asks for:
+
+1. **Workspace directory** — the local path to expose (e.g. `C:\workspace`)
+
+The wizard saves your choices to a persistent config file:
+
+| OS | Config File |
+|---|---|
+| Windows | `C:\Users\<username>\.prism-workspace-agent.json` |
+| macOS / Linux | `~/.prism-workspace-agent.json` |
+
+On subsequent launches, the agent reads from this file automatically — no re-prompting.
+
+### Reconfiguring
+
+To re-run the wizard or change settings:
+
+- **Delete the config file** and relaunch
+- **Edit the JSON directly:**
+  ```json
+  {
+    "backend": "wss://api.tools.rod.dev",
+    "secret": "your-api-secret",
+    "workspace": ["C:\\workspace"]
+  }
+  ```
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Opens and closes immediately | Unhandled error before the pause-on-exit handler | Run from a terminal (`cmd` or PowerShell) to see the error output |
+| `WebSocket error: connection failed` | Reverse proxy not forwarding WebSocket upgrades | See [Reverse Proxy Configuration](#reverse-proxy-configuration) below |
+| Doesn't ask for settings on relaunch | Config was saved from a previous wizard run | Delete `~/.prism-workspace-agent.json` to reset |
+
+---
+
+## Reverse Proxy Configuration
+
+The workspace agent connects to `wss://api.tools.rod.dev/ws/agent` via WebSocket. If the tools-service sits behind a reverse proxy (nginx, Synology DSM, Caddy, etc.), the proxy **must** be configured to forward WebSocket upgrade headers. Without this, the proxy strips the `Upgrade` and `Connection` hop-by-hop headers (especially over HTTP/2) and the connection fails with code `1006`.
+
+### Synology DSM
+
+1. Open **Control Panel → Login Portal → Advanced → Reverse Proxy**
+2. Select the `api.tools.rod.dev` rule → **Edit**
+3. Go to the **Custom Header** tab
+4. Click **Create → WebSocket** (adds both headers automatically), or add manually:
+
+| Header Name | Value |
+|---|---|
+| `Upgrade` | `$http_upgrade` |
+| `Connection` | `$connection_upgrade` |
+
+5. Click **Save**
+
+### Raw nginx
+
+Add or update the `location` block for the WebSocket path:
+
+```nginx
+location /ws/ {
+    proxy_pass http://127.0.0.1:5590;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_read_timeout 86400s;
+    proxy_send_timeout 86400s;
+}
+```
+
+Key directives:
+
+| Directive | Why |
+|---|---|
+| `proxy_http_version 1.1` | WebSocket upgrade requires HTTP/1.1 between nginx and the backend (HTTP/2 strips hop-by-hop headers) |
+| `proxy_set_header Upgrade` | Forwards the client's `Upgrade: websocket` header to the backend |
+| `proxy_set_header Connection "upgrade"` | Tells the backend this is an upgrade request |
+| `proxy_read_timeout 86400s` | Prevents nginx from closing idle WebSocket connections (default is 60s) |
+
+### Caddy
+
+Caddy handles WebSocket upgrades automatically — no extra configuration needed.
+
+### Verifying
+
+Test the WebSocket handshake from any machine:
+
+```bash
+curl -v \
+  -H "Upgrade: websocket" \
+  -H "Connection: Upgrade" \
+  -H "Sec-WebSocket-Version: 13" \
+  -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+  "https://api.tools.rod.dev/ws/agent" 2>&1 | grep "HTTP/"
+```
+
+- ✅ **`HTTP/1.1 101 Switching Protocols`** — WebSocket upgrade successful
+- ❌ **`HTTP/2 404`** — proxy is using HTTP/2 and stripping upgrade headers (fix: add `proxy_http_version 1.1`)
+- ❌ **`HTTP/1.1 401`** — secret mismatch
+
+---
+
 ## CLI Options
 
 | Flag | Short | Required | Description |
