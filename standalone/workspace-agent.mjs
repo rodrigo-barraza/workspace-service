@@ -40,6 +40,18 @@ const logger = {
   error:   (message) => console.log(`${COLORS.dim}${timestamp()}${COLORS.reset} ${COLORS.red} ERR${COLORS.reset}  ${message}`),
 };
 
+async function waitForKeypressBeforeExit() {
+  if (process.platform === "win32" && process.stdin.isTTY) {
+    const readlineInterface = readline.createInterface({ input: process.stdin, output: process.stdout });
+    await new Promise((resolvePromise) => {
+      readlineInterface.question("\nPress Enter to exit...", () => {
+        readlineInterface.close();
+        resolvePromise();
+      });
+    });
+  }
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // CLI
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -194,6 +206,12 @@ async function runInteractiveConfigurationWizard() {
   return configuration;
 }
 
+async function exitWithError(errorMessage) {
+  logger.error(errorMessage);
+  await waitForKeypressBeforeExit();
+  process.exit(1);
+}
+
 async function main() {
   const cliOptions = parseArgs();
 
@@ -203,24 +221,31 @@ async function main() {
   let workspacePaths = cliOptions.workspace || (process.env.WORKSPACE_ROOTS ? process.env.WORKSPACE_ROOTS.split(",").map((text) => text.trim()).filter(Boolean) : []);
   let secret = cliOptions.secret || process.env.WORKSPACE_SERVICE_SECRET;
 
-  const isConfigurationMissing = !backendUrl && workspacePaths.length === 0 && !secret;
-  if (isConfigurationMissing) {
+  const isConfigurationIncomplete = !backendUrl || workspacePaths.length === 0 || !secret;
+  if (isConfigurationIncomplete) {
     let configuration = await readPersistentConfiguration();
-    if (!configuration) {
-      configuration = await runInteractiveConfigurationWizard();
+    if (configuration) {
+      backendUrl = backendUrl || configuration.backend;
+      workspacePaths = workspacePaths.length > 0 ? workspacePaths : (configuration.workspace || []);
+      secret = secret || configuration.secret;
     }
-    backendUrl = configuration.backend;
-    workspacePaths = configuration.workspace;
-    secret = configuration.secret;
+
+    const isStillIncomplete = !backendUrl || workspacePaths.length === 0 || !secret;
+    if (isStillIncomplete) {
+      const configuration = await runInteractiveConfigurationWizard();
+      backendUrl = backendUrl || configuration.backend;
+      workspacePaths = workspacePaths.length > 0 ? workspacePaths : (configuration.workspace || []);
+      secret = secret || configuration.secret;
+    }
   }
 
-  if (!backendUrl) { logger.error("Missing --backend flag, env var, or configuration. Use --help for usage."); process.exit(1); }
-  if (!workspacePaths || workspacePaths.length === 0) { logger.error("Missing --workspace flag, env var, or configuration. Use --help for usage."); process.exit(1); }
+  if (!backendUrl) { await exitWithError("Missing --backend flag, env var, or configuration. Use --help for usage."); }
+  if (!workspacePaths || workspacePaths.length === 0) { await exitWithError("Missing --workspace flag, env var, or configuration. Use --help for usage."); }
 
   const roots = workspacePaths.map((path) => resolve(path));
   for (const root of roots) {
-    if (!existsSync(root)) { logger.error(`Workspace path does not exist: ${root}`); process.exit(1); }
-    if (!statSync(root).isDirectory()) { logger.error(`Workspace path is not a directory: ${root}`); process.exit(1); }
+    if (!existsSync(root)) { await exitWithError(`Workspace path does not exist: ${root}`); }
+    if (!statSync(root).isDirectory()) { await exitWithError(`Workspace path is not a directory: ${root}`); }
   }
 
   if (backendUrl.startsWith("http://")) backendUrl = backendUrl.replace("http://", "ws://");
@@ -251,7 +276,8 @@ async function main() {
   process.on("SIGTERM", () => shutdown("SIGTERM"));
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
   logger.error(`Failed to start workspace agent: ${error.message}`);
+  await waitForKeypressBeforeExit();
   process.exit(1);
 });
