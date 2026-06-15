@@ -264,6 +264,7 @@ async function main() {
   logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
   const agent = new WorkspaceAgent({ backendUrl, roots, name: agentName, secret });
+  agent.on("error", () => {}); // Prevent unhandled EventEmitter error crashes
   agent.connect();
 
   function shutdown(signal) {
