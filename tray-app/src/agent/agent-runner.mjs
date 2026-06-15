@@ -12,6 +12,7 @@
 
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 
 const corePath = process.env.AGENT_CORE_PATH;
 if (!corePath || !existsSync(corePath)) {
@@ -19,7 +20,7 @@ if (!corePath || !existsSync(corePath)) {
   process.exit(1);
 }
 
-const { WorkspaceAgent, setLogger } = await import(corePath);
+const { WorkspaceAgent, setLogger } = await import(pathToFileURL(corePath).href);
 
 const backendUrl = process.env.AGENT_BACKEND_URL;
 const secret = process.env.AGENT_SECRET || "";
