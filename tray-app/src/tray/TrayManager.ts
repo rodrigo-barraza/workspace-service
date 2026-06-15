@@ -155,7 +155,7 @@ function openSettingsWindow(): void {
     title: "Prism Workspace Agent — Settings",
     autoHideMenuBar: true,
     webPreferences: {
-      preload: resolve(import.meta.dirname, "../windows/settings/settings-preload.js"),
+      preload: resolve(import.meta.dirname, "../windows/settings/settings-preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -180,7 +180,7 @@ export function openSetupWindow(): Promise<void> {
       title: "Prism Workspace Agent — Setup",
       autoHideMenuBar: true,
       webPreferences: {
-        preload: resolve(import.meta.dirname, "../windows/setup/setup-preload.js"),
+        preload: resolve(import.meta.dirname, "../windows/setup/setup-preload.cjs"),
         contextIsolation: true,
         nodeIntegration: false,
       },

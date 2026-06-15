@@ -73,13 +73,13 @@ function registerIpcHandlers(): void {
       title: "Select Workspace Directory",
       properties: ["openDirectory"],
     };
-    const result = parentWindow
+    const openDialogResult = parentWindow
       ? await dialog.showOpenDialog(parentWindow, dialogOptions)
       : await dialog.showOpenDialog(dialogOptions);
-    if (result.canceled || result.filePaths.length === 0) {
+    if (openDialogResult.canceled || openDialogResult.filePaths.length === 0) {
       return null;
     }
-    return result.filePaths[0];
+    return openDialogResult.filePaths[0];
   });
 
   ipcMain.handle(IPC_CHANNELS.SETUP_COMPLETE, (_event, configuration) => {

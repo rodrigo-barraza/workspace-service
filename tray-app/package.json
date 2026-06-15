@@ -5,7 +5,7 @@
   "main": "out/main.js",
   "type": "module",
   "scripts": {
-    "copy-assets": "node -e \"const fs = require('fs'); const path = require('path'); const copyDir = (src, dest) => { fs.mkdirSync(dest, { recursive: true }); fs.readdirSync(src).forEach(file => { if (file.endsWith('.html') || file.endsWith('.css') || file.endsWith('.mjs')) fs.copyFileSync(path.join(src, file), path.join(dest, file)); }); }; copyDir('src/agent', 'out/agent'); copyDir('src/windows/setup', 'out/windows/setup'); copyDir('src/windows/settings', 'out/windows/settings');\"",
+    "copy-assets": "node -e \"const fs = require('fs'); const path = require('path'); const copyDir = (src, dest) => { fs.mkdirSync(dest, { recursive: true }); fs.readdirSync(src).forEach(file => { if (file.endsWith('.html') || file.endsWith('.css') || file.endsWith('.mjs') || file.endsWith('.cjs')) fs.copyFileSync(path.join(src, file), path.join(dest, file)); }); }; copyDir('src/agent', 'out/agent'); copyDir('src/windows/setup', 'out/windows/setup'); copyDir('src/windows/settings', 'out/windows/settings');\"",
     "build": "tsc && npm run copy-assets",
     "start": "npm run build && electron out/main.js",
     "dev": "npm run build && electron out/main.js",
