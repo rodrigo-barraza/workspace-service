@@ -2,7 +2,7 @@
 // Prism Workspace Agent — Electron Main Process
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-import { app, ipcMain, dialog } from "electron";
+import { app, ipcMain, dialog, BrowserWindow } from "electron";
 import { initializeTray, openSetupWindow } from "./tray/TrayManager.js";
 import { agentProcess } from "./agent/AgentProcess.js";
 import {
@@ -67,11 +67,15 @@ function registerIpcHandlers(): void {
     return agentProcess.getStatus();
   });
 
-  ipcMain.handle(IPC_CHANNELS.OPEN_FOLDER_DIALOG, async () => {
-    const result = await dialog.showOpenDialog({
+  ipcMain.handle(IPC_CHANNELS.OPEN_FOLDER_DIALOG, async (event) => {
+    const parentWindow = BrowserWindow.fromWebContents(event.sender);
+    const dialogOptions: Electron.OpenDialogOptions = {
       title: "Select Workspace Directory",
       properties: ["openDirectory"],
-    });
+    };
+    const result = parentWindow
+      ? await dialog.showOpenDialog(parentWindow, dialogOptions)
+      : await dialog.showOpenDialog(dialogOptions);
     if (result.canceled || result.filePaths.length === 0) {
       return null;
     }

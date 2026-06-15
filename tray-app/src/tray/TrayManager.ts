@@ -173,7 +173,7 @@ export function openSetupWindow(): Promise<void> {
   return new Promise((resolvePromise) => {
     const setupWindow = new BrowserWindow({
       width: 500,
-      height: 520,
+      height: 600,
       resizable: false,
       maximizable: false,
       fullscreenable: false,
