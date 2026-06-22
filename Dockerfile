@@ -19,18 +19,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY package.json package-lock.json ./
+RUN npm install -g pnpm
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 
-RUN --mount=type=ssh npm ci
+RUN --mount=type=ssh \
+    --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
 
 
 # ── Stage 2: Build TypeScript ─────────────────────────────────
 FROM deps AS build
 WORKDIR /app
 COPY . .
-RUN npm run build
+RUN pnpm run build
 # Prune devDependencies for the runtime image
-RUN npm prune --omit=dev
+RUN pnpm prune --prod
 
 # ── Stage 3: Runtime ──────────────────────────────────────────
 FROM node:26-slim

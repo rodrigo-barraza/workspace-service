@@ -20,3 +20,6 @@ dist/
 tray-app/node_modules/
 tray-app/out/
 tray-app/dist/
+
+# Migrated to pnpm
+package-lock.json
