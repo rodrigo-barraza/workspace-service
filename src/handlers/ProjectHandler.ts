@@ -2,6 +2,7 @@
 
 import { readdir, stat } from "node:fs/promises";
 import { resolve, basename } from "node:path";
+import { translatePath } from "../utils.ts";
 import type { Dirent } from "node:fs";
 import type { ProjectSummaryParams, PathValidation, TreeEntry } from "../types.ts";
 
@@ -24,7 +25,7 @@ export class ProjectHandler {
     if (!inputPath || typeof inputPath !== "string") {
       return { safe: false, resolved: "", error: "Path is required" };
     }
-    return { safe: true, resolved: resolve(inputPath) };
+    return { safe: true, resolved: resolve(translatePath(inputPath, this.roots)) };
   }
 
   async summary({ path: projectPath, maxDepth = MAX_DEPTH }: ProjectSummaryParams) {

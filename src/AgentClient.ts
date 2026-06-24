@@ -12,6 +12,7 @@ import { CommandHandler } from "./handlers/CommandHandler.ts";
 import { ProjectHandler } from "./handlers/ProjectHandler.ts";
 import type { AgentClientOptions, RpcHandler, JsonRpcRequest, WatchParams } from "./types.ts";
 import { errorMessage } from "@rodrigo-barraza/utilities-library";
+import { translateRoots } from "./utils.ts";
 
 // ────────────────────────────────────────────────────────────
 // Constants
@@ -48,7 +49,7 @@ export class AgentClient {
 
   constructor({ backendUrl, roots, name, secret, reconnectInterval = 5000 }: AgentClientOptions) {
     this.backendUrl = backendUrl;
-    this.roots = roots;
+    this.roots = translateRoots(roots);
     this.name = name;
     this.secret = secret;
     this.reconnectInterval = reconnectInterval;

@@ -2,6 +2,7 @@
 
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
+import { translatePath } from "../utils.ts";
 import type { GitStatusParams, GitDiffParams, GitLogParams, PathValidation, GitFileChange } from "../types.ts";
 
 const GIT_TIMEOUT_MS = 10_000;
@@ -102,7 +103,7 @@ export class GitHandler {
     if (!inputPath || typeof inputPath !== "string") {
       return { safe: false, resolved: "", error: "Path is required" };
     }
-    return { safe: true, resolved: resolve(inputPath) };
+    return { safe: true, resolved: resolve(translatePath(inputPath, this.roots)) };
   }
 
   async status({ path: repoPath }: GitStatusParams) {

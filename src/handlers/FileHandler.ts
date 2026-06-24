@@ -4,6 +4,7 @@ import { readFile, writeFile, stat, readdir, mkdir, rename, unlink } from "node:
 import { resolve, relative, extname, dirname } from "node:path";
 import { existsSync } from "node:fs";
 import { escapeRegex, errorMessage } from "@rodrigo-barraza/utilities-library";
+import { translatePath } from "../utils.ts";
 import type {
   ReadFileParams, WriteFileParams, StringReplaceParameters, PatchFileParams,
   FileInfoParams, FileDiffParams, MoveFileParams, DeleteFileParams,
@@ -70,9 +71,10 @@ export class FileHandler {
     if (!inputPath || typeof inputPath !== "string") {
       return { safe: false, resolved: "", error: "Path is required (string)" };
     }
-    const resolved = inputPath.startsWith("/")
-      ? resolve(inputPath)
-      : resolve(this.roots[0], inputPath);
+    const translated = translatePath(inputPath, this.roots);
+    const resolved = translated.startsWith("/")
+      ? resolve(translated)
+      : resolve(this.roots[0], translated);
     return { safe: true, resolved };
   }
 
