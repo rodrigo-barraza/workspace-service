@@ -26,7 +26,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@rodrigo-barraza/utilities-library": "github:rodrigo-barraza/utilities-library",
+    "@rodrigo-barraza/utilities-library": "^0.2.0",
     "commander": "^14.0.3",
     "diff": "^8.0.4",
     "ws": "^8.20.0"
