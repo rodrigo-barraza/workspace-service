@@ -159,67 +159,14 @@ export interface WatchParams {
   recursive?: boolean;
 }
 
-// ── File Info Entry ─────────────────────────────────────────
+export type {
+  FileInfoEntry,
+  DirectoryEntry,
+  TreeEntry,
+  GitFileChange,
+  GrepMatch,
+  GlobMatch,
+  PathValidationResult as PathValidation,
+} from "@rodrigo-barraza/utilities-library";
 
-export interface FileInfoEntry {
-  path: string;
-  exists: boolean;
-  isFile?: boolean;
-  isDirectory?: boolean;
-  sizeBytes?: number;
-  lastModified?: string;
-  extension?: string | null;
-  isBinary?: boolean;
-  lines?: number;
-  error?: string;
-}
 
-// ── Directory Entry ─────────────────────────────────────────
-
-export interface DirectoryEntry {
-  name: string;
-  path: string;
-  isDir: boolean;
-  sizeBytes?: number;
-}
-
-// ── Tree Entry ──────────────────────────────────────────────
-
-export interface TreeEntry {
-  name: string;
-  type: "file" | "directory";
-  sizeBytes?: number;
-  children?: TreeEntry[];
-}
-
-// ── Git Status Entry ────────────────────────────────────────
-
-export interface GitFileChange {
-  status: string;
-  file: string;
-}
-
-// ── Grep Result ─────────────────────────────────────────────
-
-export interface GrepMatch {
-  file: string;
-  line: number;
-  content: string;
-}
-
-// ── Glob Match ──────────────────────────────────────────────
-
-export interface GlobMatch {
-  path: string;
-  relativePath: string;
-  name: string;
-  sizeBytes?: number;
-}
-
-// ── Path Validation ─────────────────────────────────────────
-
-export interface PathValidation {
-  safe: boolean;
-  resolved: string;
-  error?: string;
-}

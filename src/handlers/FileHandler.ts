@@ -18,44 +18,18 @@ import type {
 // Constants (mirrored from AgenticFileService)
 // ────────────────────────────────────────────────────────────
 
-const MAX_READ_BYTES = 1_048_576;      // 1 MB
-const MAX_WRITE_BYTES = 5_242_880;     // 5 MB
-const MAX_LINES_PER_READ = 800;
-const MAX_GREP_RESULTS = 50;
-const MAX_GLOB_RESULTS = 200;
-const MAX_DIR_ENTRIES = 500;
-
-
-const BINARY_EXTENSIONS = new Set([
-  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico",
-  ".mp3", ".mp4", ".wav", ".ogg", ".webm", ".avi", ".mov",
-  ".zip", ".tar", ".gz", ".bz2", ".7z", ".rar",
-  ".woff", ".woff2", ".ttf", ".otf", ".eot",
-  ".pdf", ".doc", ".docx", ".xls", ".xlsx",
-  ".exe", ".dll", ".so", ".dylib",
-  ".wasm", ".pyc", ".class",
-]);
-
-// Image extensions eligible for inline base64 preview (avoids /file/raw round-trip)
-const PREVIEW_IMAGE_EXTENSIONS = new Set([
-  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".avif", ".tiff", ".tif",
-]);
-const MAX_PREVIEW_BYTES = 2_097_152; // 2 MB
-
-// ────────────────────────────────────────────────────────────
-// Path Validation
-// ────────────────────────────────────────────────────────────
-
-
-function globToRegex(glob: string) {
-  const regex = glob
-    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-    .replace(/\*\*/g, "<<<GLOBSTAR>>>")
-    .replace(/\*/g, "[^/]*")
-    .replace(/<<<GLOBSTAR>>>/g, ".*")
-    .replace(/\?/g, ".");
-  return new RegExp(`(^|/)${regex}$`, "i");
-}
+import {
+  WORKSPACE_MAX_READ_BYTES as MAX_READ_BYTES,
+  WORKSPACE_MAX_WRITE_BYTES as MAX_WRITE_BYTES,
+  WORKSPACE_MAX_LINES_PER_READ as MAX_LINES_PER_READ,
+  WORKSPACE_MAX_GREP_RESULTS as MAX_GREP_RESULTS,
+  WORKSPACE_MAX_GLOB_RESULTS as MAX_GLOB_RESULTS,
+  WORKSPACE_MAX_DIRECTORY_ENTRIES as MAX_DIR_ENTRIES,
+  WORKSPACE_MAX_PREVIEW_BYTES as MAX_PREVIEW_BYTES,
+  BINARY_FILE_EXTENSIONS as BINARY_EXTENSIONS,
+  PREVIEW_IMAGE_FILE_EXTENSIONS as PREVIEW_IMAGE_EXTENSIONS,
+  globToRegex,
+} from "@rodrigo-barraza/utilities-library";
 
 export class FileHandler {
   roots: string[];

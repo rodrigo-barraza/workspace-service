@@ -9,11 +9,7 @@ import type { ProjectSummaryParams, TreeEntry } from "../types.ts";
 const MAX_TREE_ENTRIES = 1000;
 const MAX_DEPTH = 6;
 
-const SKIP_DIRS = new Set([
-  "node_modules", ".git", ".next", ".nuxt", "__pycache__",
-  "dist", "build", ".cache", ".turbo", "coverage",
-  ".venv", "venv", "env",
-]);
+import { WORKSPACE_SKIP_DIRECTORIES as SKIP_DIRS } from "@rodrigo-barraza/utilities-library";
 
 export class ProjectHandler {
   roots: string[];
