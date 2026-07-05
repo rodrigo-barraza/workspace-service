@@ -48,17 +48,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
-
 # Copy pre-built node_modules from deps stage
-COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/node_modules /app/node_modules
 
 # Copy compiled application
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/package.json ./package.json
+COPY --from=build /app/dist /app/dist
+COPY --from=build /app/package.json /app/package.json
 
-# Create workspace directory
+# Create workspace directory and default to it
 RUN mkdir -p /workspace
+WORKDIR /workspace
 
 # NOTE: Intentionally running as root.
 # The container IS the security boundary (like WSL).
@@ -70,4 +69,4 @@ EXPOSE 5605
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget --no-verbose --tries=1 -O /dev/null http://127.0.0.1:5605/health || exit 1
 
-CMD ["node", "dist/boot.js"]
+CMD ["node", "/app/dist/boot.js"]
