@@ -12,7 +12,12 @@ import { CommandHandler } from "./handlers/CommandHandler.ts";
 import { ProjectHandler } from "./handlers/ProjectHandler.ts";
 import type { AgentClientOptions, RpcHandler, JsonRpcRequest, WatchParams } from "./types.ts";
 import { errorMessage } from "@rodrigo-barraza/utilities-library";
-import { translateRoots } from "./utils.ts";
+import {
+  translateRoots,
+  WORKSPACE_VIRTUAL_ROOT,
+  devirtualizeRequestParams,
+  virtualizeResponsePaths,
+} from "./utils.ts";
 
 // ────────────────────────────────────────────────────────────
 // Constants
@@ -30,6 +35,7 @@ const WATCH_DEBOUNCE_MS = 300;
 export class AgentClient {
   backendUrl: string;
   roots: string[];
+  virtualRoots: string[];
   name: string;
   secret: string;
   reconnectInterval: number;
@@ -50,6 +56,9 @@ export class AgentClient {
   constructor({ backendUrl, roots, name, secret, reconnectInterval = 5000 }: AgentClientOptions) {
     this.backendUrl = backendUrl;
     this.roots = translateRoots(roots);
+    // The virtual roots are what the LLM / tools-service see.
+    // The actual roots (this.roots) are used internally by handlers.
+    this.virtualRoots = [WORKSPACE_VIRTUAL_ROOT];
     this.name = name;
     this.secret = secret;
     this.reconnectInterval = reconnectInterval;
@@ -205,7 +214,7 @@ export class AgentClient {
       params: {
         agentId: this.agentId,
         name: this.name,
-        roots: this.roots,
+        roots: this.virtualRoots,
         capabilities: ["file", "git", "command", "project"],
         version: "0.1.0",
         hostInfo: {
@@ -253,8 +262,12 @@ export class AgentClient {
       }
 
       try {
-        const result = await handler(message.params || {});
-        this._sendResponse(message.id, result, undefined);
+        // Devirtualize incoming paths: "/src/foo.ts" → "/workspace/src/foo.ts"
+        const translatedParams = devirtualizeRequestParams(message.params || {});
+        const result = await handler(translatedParams as Record<string, unknown>);
+        // Virtualize outgoing paths: "/workspace/src/foo.ts" → "/src/foo.ts"
+        const translatedResult = virtualizeResponsePaths(result);
+        this._sendResponse(message.id, translatedResult, undefined);
       } catch (error: unknown) {
         const messageText = errorMessage(error);
         logger.error(`Handler error (${message.method}): ${messageText}`);

@@ -121,3 +121,142 @@ describe("Path Translation Utilities", () => {
     });
   });
 });
+
+describe("Path Virtualization (LLM sees '/' → actual '/workspace')", () => {
+  // These functions use module-level constants, not fs.existsSync,
+  // so they operate independently of the mock.
+
+  describe("devirtualizePath", () => {
+    it("should convert virtual root paths to actual filesystem paths", async () => {
+      const { devirtualizePath } = await import("../src/utils.ts");
+
+      // Only runs meaningful translation when WORKSPACE_VIRTUAL_ROOT !== WORKSPACE_ACTUAL_ROOT
+      // In test environment, WORKSPACE_VIRTUAL_ROOT defaults to "/"
+      // and WORKSPACE_ACTUAL_ROOT defaults to "/workspace"
+      expect(devirtualizePath("/src/foo.ts")).toBe("/workspace/src/foo.ts");
+      expect(devirtualizePath("/")).toBe("/workspace");
+      expect(devirtualizePath("/package.json")).toBe("/workspace/package.json");
+    });
+
+    it("should pass through paths that already use the actual root", async () => {
+      const { devirtualizePath } = await import("../src/utils.ts");
+
+      expect(devirtualizePath("/workspace/src/foo.ts")).toBe("/workspace/src/foo.ts");
+      expect(devirtualizePath("/workspace")).toBe("/workspace");
+    });
+
+    it("should pass through relative paths unchanged", async () => {
+      const { devirtualizePath } = await import("../src/utils.ts");
+
+      expect(devirtualizePath(".")).toBe(".");
+      expect(devirtualizePath("./src")).toBe("./src");
+      expect(devirtualizePath("src/foo.ts")).toBe("src/foo.ts");
+    });
+
+    it("should pass through empty or falsy values", async () => {
+      const { devirtualizePath } = await import("../src/utils.ts");
+
+      expect(devirtualizePath("")).toBe("");
+    });
+  });
+
+  describe("virtualizePath", () => {
+    it("should convert actual filesystem paths to virtual root paths", async () => {
+      const { virtualizePath } = await import("../src/utils.ts");
+
+      expect(virtualizePath("/workspace/src/foo.ts")).toBe("/src/foo.ts");
+      expect(virtualizePath("/workspace")).toBe("/");
+      expect(virtualizePath("/workspace/package.json")).toBe("/package.json");
+    });
+
+    it("should pass through paths outside the actual root", async () => {
+      const { virtualizePath } = await import("../src/utils.ts");
+
+      expect(virtualizePath("/etc/hosts")).toBe("/etc/hosts");
+      expect(virtualizePath("/tmp/test.txt")).toBe("/tmp/test.txt");
+    });
+
+    it("should pass through empty or falsy values", async () => {
+      const { virtualizePath } = await import("../src/utils.ts");
+
+      expect(virtualizePath("")).toBe("");
+    });
+  });
+
+  describe("virtualizeResponsePaths (recursive)", () => {
+    it("should recursively virtualize paths in nested objects", async () => {
+      const { virtualizeResponsePaths } = await import("../src/utils.ts");
+
+      const response = {
+        filePath: "/workspace/src/index.ts",
+        totalLines: 42,
+        content: "console.log('hello');",
+        nested: {
+          absolutePath: "/workspace/tests/foo.test.ts",
+          flag: true,
+        },
+      };
+
+      const virtualized = virtualizeResponsePaths(response) as Record<string, unknown>;
+      expect(virtualized.filePath).toBe("/src/index.ts");
+      expect(virtualized.totalLines).toBe(42);
+      expect((virtualized.nested as Record<string, unknown>).absolutePath).toBe("/tests/foo.test.ts");
+    });
+
+    it("should recursively virtualize paths in arrays", async () => {
+      const { virtualizeResponsePaths } = await import("../src/utils.ts");
+
+      const response = {
+        files: ["/workspace/a.ts", "/workspace/b.ts"],
+        count: 2,
+      };
+
+      const virtualized = virtualizeResponsePaths(response) as Record<string, unknown>;
+      expect(virtualized.files).toEqual(["/a.ts", "/b.ts"]);
+    });
+
+    it("should not modify strings that are not path-like (e.g. error messages)", async () => {
+      const { virtualizeResponsePaths } = await import("../src/utils.ts");
+
+      const response = {
+        error: "File not found: /workspace/missing.ts",
+        code: "ENOENT",
+      };
+
+      const virtualized = virtualizeResponsePaths(response) as Record<string, unknown>;
+      // Error message strings are NOT paths — they pass through unchanged.
+      // Only string values that ARE full paths get virtualized.
+      expect(virtualized.error).toBe("File not found: /workspace/missing.ts");
+      expect(virtualized.code).toBe("ENOENT");
+    });
+  });
+
+  describe("devirtualizeRequestParams (recursive)", () => {
+    it("should recursively devirtualize paths in request params", async () => {
+      const { devirtualizeRequestParams } = await import("../src/utils.ts");
+
+      const params = {
+        path: "/src/index.ts",
+        startLine: 1,
+        endLine: 50,
+      };
+
+      const devirtualized = devirtualizeRequestParams(params) as Record<string, unknown>;
+      expect(devirtualized.path).toBe("/workspace/src/index.ts");
+      expect(devirtualized.startLine).toBe(1);
+    });
+
+    it("should handle command.run params with cwd", async () => {
+      const { devirtualizeRequestParams } = await import("../src/utils.ts");
+
+      const params = {
+        command: "git status",
+        cwd: "/prism-service",
+      };
+
+      const devirtualized = devirtualizeRequestParams(params) as Record<string, unknown>;
+      expect(devirtualized.command).toBe("git status");
+      expect(devirtualized.cwd).toBe("/workspace/prism-service");
+    });
+  });
+});
