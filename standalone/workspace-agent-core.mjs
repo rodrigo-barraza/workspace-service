@@ -533,14 +533,23 @@ async function handleProjectSummary(roots, { path: projectPath, maxDepth = MAX_T
       const entries = await readdir(dir, { withFileTypes: true });
       const sorted = entries.sort((a, b) => { if (a.isDirectory() && !b.isDirectory()) return -1; if (!a.isDirectory() && b.isDirectory()) return 1; return a.name.localeCompare(b.name); });
       const results = [];
+      const directoriesToRecurse = [];
       for (const entry of sorted) {
         if (entryCount >= MAX_TREE_ENTRIES) break;
         if (SKIP_DIRS.has(entry.name)) continue;
         if (entry.name.startsWith(".") && entry.name !== ".env.example") continue;
         const fullPath = resolve(dir, entry.name);
         entryCount++;
-        if (entry.isDirectory()) { results.push({ name: entry.name, type: "directory", children: await buildTree(fullPath, depth + 1) }); }
+        if (entry.isDirectory()) {
+          const resultIndex = results.length;
+          results.push({ name: entry.name, type: "directory", children: [] });
+          if (depth < clampedDepth) directoriesToRecurse.push({ index: resultIndex, fullPath });
+        }
         else { try { const fileStat = await stat(fullPath); results.push({ name: entry.name, type: "file", sizeBytes: fileStat.size }); } catch { results.push({ name: entry.name, type: "file" }); } }
+      }
+      for (const { index, fullPath } of directoriesToRecurse) {
+        if (entryCount >= MAX_TREE_ENTRIES) break;
+        results[index].children = await buildTree(fullPath, depth + 1);
       }
       return results;
     } catch { return []; }

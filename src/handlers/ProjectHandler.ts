@@ -53,6 +53,10 @@ export class ProjectHandler {
           return a.name.localeCompare(b.name);
         });
 
+        // Phase 1: collect all entries at this level (dirs as placeholders, files fully)
+        // This guarantees sibling files aren't starved by deep recursive traversal.
+        const directoriesToRecurse: Array<{ index: number; fullPath: string }> = [];
+
         for (const entry of sorted) {
           if (entryCount >= MAX_TREE_ENTRIES) break;
 
@@ -63,12 +67,15 @@ export class ProjectHandler {
           entryCount++;
 
           if (entry.isDirectory()) {
-            const children = await buildTree(fullPath, depth + 1);
+            const resultIndex = results.length;
             results.push({
               name: entry.name,
               type: "directory",
-              children,
+              children: [],
             });
+            if (depth < clampedDepth) {
+              directoriesToRecurse.push({ index: resultIndex, fullPath });
+            }
           } else {
             try {
               const fileStat = await stat(fullPath);
@@ -84,6 +91,12 @@ export class ProjectHandler {
               });
             }
           }
+        }
+
+        // Phase 2: recurse into directories after all siblings are collected
+        for (const { index, fullPath } of directoriesToRecurse) {
+          if (entryCount >= MAX_TREE_ENTRIES) break;
+          results[index].children = await buildTree(fullPath, depth + 1);
         }
 
         return results;
