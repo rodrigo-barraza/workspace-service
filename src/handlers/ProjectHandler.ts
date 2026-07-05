@@ -25,7 +25,11 @@ export class ProjectHandler {
     if (!inputPath || typeof inputPath !== "string") {
       return { safe: false, resolved: "", error: "Path is required" };
     }
-    return { safe: true, resolved: resolve(translatePath(inputPath, this.roots)) };
+    const translated = translatePath(inputPath, this.roots);
+    const resolved = translated.startsWith("/")
+      ? resolve(translated)
+      : resolve(this.roots[0], translated);
+    return { safe: true, resolved };
   }
 
   async summary({ path: projectPath, maxDepth = MAX_DEPTH }: ProjectSummaryParams) {
