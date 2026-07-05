@@ -14,20 +14,16 @@ import type {
 } from "../types.ts";
 
 
-// ────────────────────────────────────────────────────────────
-// Constants (mirrored from AgenticFileService)
-// ────────────────────────────────────────────────────────────
-
 import {
-  WORKSPACE_MAX_READ_BYTES as MAX_READ_BYTES,
-  WORKSPACE_MAX_WRITE_BYTES as MAX_WRITE_BYTES,
-  WORKSPACE_MAX_LINES_PER_READ as MAX_LINES_PER_READ,
-  WORKSPACE_MAX_GREP_RESULTS as MAX_GREP_RESULTS,
-  WORKSPACE_MAX_GLOB_RESULTS as MAX_GLOB_RESULTS,
-  WORKSPACE_MAX_DIRECTORY_ENTRIES as MAX_DIR_ENTRIES,
-  WORKSPACE_MAX_PREVIEW_BYTES as MAX_PREVIEW_BYTES,
-  BINARY_FILE_EXTENSIONS as BINARY_EXTENSIONS,
-  PREVIEW_IMAGE_FILE_EXTENSIONS as PREVIEW_IMAGE_EXTENSIONS,
+  WORKSPACE_MAX_READ_BYTES,
+  WORKSPACE_MAX_WRITE_BYTES,
+  WORKSPACE_MAX_LINES_PER_READ,
+  WORKSPACE_MAX_GREP_RESULTS,
+  WORKSPACE_MAX_GLOB_RESULTS,
+  WORKSPACE_MAX_DIRECTORY_ENTRIES,
+  WORKSPACE_MAX_PREVIEW_BYTES,
+  BINARY_FILE_EXTENSIONS,
+  PREVIEW_IMAGE_FILE_EXTENSIONS,
   globToRegex,
 } from "@rodrigo-barraza/utilities-library";
 
@@ -60,17 +56,17 @@ export class FileHandler {
       if (stats.isDirectory()) {
         return { error: `'${resolved}' is a directory, not a file. Use list_directory instead.` };
       }
-      if (stats.size > MAX_READ_BYTES) {
+      if (stats.size > WORKSPACE_MAX_READ_BYTES) {
         return {
-          error: `File is ${(stats.size / 1024).toFixed(1)} KB — exceeds max read size of ${(MAX_READ_BYTES / 1024).toFixed(0)} KB. Use startLine/endLine to read a portion.`,
+          error: `File is ${(stats.size / 1024).toFixed(1)} KB — exceeds max read size of ${(WORKSPACE_MAX_READ_BYTES / 1024).toFixed(0)} KB. Use startLine/endLine to read a portion.`,
         };
       }
 
       const fileExtension = extname(resolved).toLowerCase();
 
       // Binary file handling — return base64 for raw mode or previewable images
-      if (BINARY_EXTENSIONS.has(fileExtension)) {
-        const includeBase64 = rawMode || (PREVIEW_IMAGE_EXTENSIONS.has(fileExtension) && stats.size <= MAX_PREVIEW_BYTES);
+      if (BINARY_FILE_EXTENSIONS.has(fileExtension)) {
+        const includeBase64 = rawMode || (PREVIEW_IMAGE_FILE_EXTENSIONS.has(fileExtension) && stats.size <= WORKSPACE_MAX_PREVIEW_BYTES);
 
         if (includeBase64) {
           const buffer = await readFile(resolved);
@@ -110,8 +106,8 @@ export class FileHandler {
 
       const start = startLine ? Math.max(1, startLine) : 1;
       let end = endLine ? Math.min(totalLines, endLine) : totalLines;
-      if (end - start + 1 > MAX_LINES_PER_READ) {
-        end = start + MAX_LINES_PER_READ - 1;
+      if (end - start + 1 > WORKSPACE_MAX_LINES_PER_READ) {
+        end = start + WORKSPACE_MAX_LINES_PER_READ - 1;
       }
 
       const selectedLines = allLines.slice(start - 1, end);
@@ -145,9 +141,9 @@ export class FileHandler {
     }
 
     const bytes = Buffer.byteLength(content, "utf-8");
-    if (bytes > MAX_WRITE_BYTES) {
+    if (bytes > WORKSPACE_MAX_WRITE_BYTES) {
       return {
-        error: `Content is ${(bytes / 1024).toFixed(1)} KB — exceeds max write size of ${(MAX_WRITE_BYTES / 1024).toFixed(0)} KB.`,
+        error: `Content is ${(bytes / 1024).toFixed(1)} KB — exceeds max write size of ${(WORKSPACE_MAX_WRITE_BYTES / 1024).toFixed(0)} KB.`,
       };
     }
 
@@ -308,10 +304,10 @@ export class FileHandler {
             sizeBytes: stats.size,
             lastModified: stats.mtime.toISOString(),
             extension: fileExtension || null,
-            isBinary: BINARY_EXTENSIONS.has(fileExtension),
+            isBinary: BINARY_FILE_EXTENSIONS.has(fileExtension),
           };
 
-          if (stats.isFile() && !BINARY_EXTENSIONS.has(fileExtension) && stats.size <= MAX_READ_BYTES) {
+          if (stats.isFile() && !BINARY_FILE_EXTENSIONS.has(fileExtension) && stats.size <= WORKSPACE_MAX_READ_BYTES) {
             try {
               const content = await readFile(resolved, "utf-8");
               info.lines = content.split("\n").length;
@@ -495,13 +491,13 @@ export class FileHandler {
       const entries: DirectoryEntry[] = [];
 
       const walk = async (dir: string, depth: number) => {
-        if (entries.length >= MAX_DIR_ENTRIES) return;
+        if (entries.length >= WORKSPACE_MAX_DIRECTORY_ENTRIES) return;
         if (depth > maxDepth) return;
 
         const dirEntries = await readdir(dir, { withFileTypes: true });
 
         for (const entry of dirEntries) {
-          if (entries.length >= MAX_DIR_ENTRIES) break;
+          if (entries.length >= WORKSPACE_MAX_DIRECTORY_ENTRIES) break;
 
           const fullPath = resolve(dir, entry.name);
           const relativePath = relative(resolved, fullPath);
@@ -530,7 +526,7 @@ export class FileHandler {
       return {
         directory: resolved,
         totalEntries: entries.length,
-        truncated: entries.length >= MAX_DIR_ENTRIES,
+        truncated: entries.length >= WORKSPACE_MAX_DIRECTORY_ENTRIES,
         entries,
       };
     } catch (error: unknown) {
@@ -616,22 +612,22 @@ export class FileHandler {
       const fileMatches = new Set<string>();
 
       const searchFile = async (filePath: string) => {
-        if (results.length >= MAX_GREP_RESULTS) return;
+        if (results.length >= WORKSPACE_MAX_GREP_RESULTS) return;
         const fileExtension = extname(filePath).toLowerCase();
-        if (BINARY_EXTENSIONS.has(fileExtension)) return;
+        if (BINARY_FILE_EXTENSIONS.has(fileExtension)) return;
 
         const pathCheck = this.validatePath(filePath);
         if (!pathCheck.safe) return;
 
         try {
           const fileStat = await stat(filePath);
-          if (fileStat.size > MAX_READ_BYTES) return;
+          if (fileStat.size > WORKSPACE_MAX_READ_BYTES) return;
 
           const content = await readFile(filePath, "utf-8");
           const lines = content.split("\n");
 
           for (let i = 0; i < lines.length; i++) {
-            if (results.length >= MAX_GREP_RESULTS) break;
+            if (results.length >= WORKSPACE_MAX_GREP_RESULTS) break;
             regex.lastIndex = 0;
             if (regex.test(lines[i])) {
               fileMatches.add(filePath);
@@ -648,11 +644,11 @@ export class FileHandler {
       };
 
       const walkDir = async (dir: string) => {
-        if (results.length >= MAX_GREP_RESULTS) return;
+        if (results.length >= WORKSPACE_MAX_GREP_RESULTS) return;
         try {
           const entries = await readdir(dir, { withFileTypes: true });
           for (const entry of entries) {
-            if (results.length >= MAX_GREP_RESULTS) break;
+            if (results.length >= WORKSPACE_MAX_GREP_RESULTS) break;
             const fullPath = resolve(dir, entry.name);
 
             if (entry.isDirectory()) {
@@ -686,7 +682,7 @@ export class FileHandler {
           searchPath: resolved,
           matchingFiles: [...fileMatches],
           totalFiles: fileMatches.size,
-          truncated: fileMatches.size >= MAX_GREP_RESULTS,
+          truncated: fileMatches.size >= WORKSPACE_MAX_GREP_RESULTS,
         };
       }
 
@@ -694,7 +690,7 @@ export class FileHandler {
         pattern,
         searchPath: resolved,
         totalMatches: results.length,
-        truncated: results.length >= MAX_GREP_RESULTS,
+        truncated: results.length >= WORKSPACE_MAX_GREP_RESULTS,
         results,
       };
     } catch (error: unknown) {
@@ -715,11 +711,11 @@ export class FileHandler {
     const globRegex = globToRegex(pattern);
 
     const walk = async (dir: string) => {
-      if (matches.length >= MAX_GLOB_RESULTS) return;
+      if (matches.length >= WORKSPACE_MAX_GLOB_RESULTS) return;
       try {
         const entries = await readdir(dir, { withFileTypes: true });
         for (const entry of entries) {
-          if (matches.length >= MAX_GLOB_RESULTS) break;
+          if (matches.length >= WORKSPACE_MAX_GLOB_RESULTS) break;
           const fullPath = resolve(dir, entry.name);
           const relativePath = relative(resolved, fullPath);
 
@@ -753,7 +749,7 @@ export class FileHandler {
         pattern,
         searchPath: resolved,
         totalMatches: matches.length,
-        truncated: matches.length >= MAX_GLOB_RESULTS,
+        truncated: matches.length >= WORKSPACE_MAX_GLOB_RESULTS,
         matches,
       };
     } catch (error: unknown) {
