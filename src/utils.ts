@@ -71,24 +71,46 @@ export function virtualizePath(actualPath: string): string {
   return actualPath;
 }
 
+// Known field names that contain filesystem paths in RPC requests.
+// Only these fields are devirtualized on incoming RPC params.
+const REQUEST_PATH_FIELD_NAMES = new Set([
+  "path", "cwd", "source", "destination", "path1", "path2",
+  "pathA", "pathB",
+  "filePath", "repoPath", "projectPath", "watchRoot",
+  "searchPath", "dirPath", "paths",
+]);
+
+// Known field names that contain filesystem paths in RPC responses.
+// Only these fields are virtualized on outgoing RPC results.
+const RESPONSE_PATH_FIELD_NAMES = new Set([
+  "path", "filePath", "projectPath", "cwd", "source", "destination",
+  "watchRoot", "resolved", "absolutePath", "file",
+  "directory", "paths",
+]);
+
 /**
- * Recursively walk a JSON-serializable value and virtualize all string
- * values that look like actual-root paths. Used at the RPC response
- * boundary so handler code doesn't need to know about virtualization.
+ * Recursively walk a JSON-serializable value and virtualize string
+ * values in known path fields. Used at the RPC response boundary
+ * so handler code doesn't need to know about virtualization.
  */
-export function virtualizeResponsePaths(value: unknown): unknown {
+export function virtualizeResponsePaths(value: unknown, fieldName?: string): unknown {
   if (!isVirtualized) return value;
 
   if (typeof value === "string") {
-    return virtualizePath(value);
+    // Only virtualize if this is a known path field
+    if (fieldName && RESPONSE_PATH_FIELD_NAMES.has(fieldName)) {
+      return virtualizePath(value);
+    }
+    return value;
   }
   if (Array.isArray(value)) {
-    return value.map(virtualizeResponsePaths);
+    // Arrays inherit the field name context (e.g., "paths": ["/workspace/a.ts"])
+    return value.map((item) => virtualizeResponsePaths(item, fieldName));
   }
   if (value !== null && typeof value === "object") {
     const result: Record<string, unknown> = {};
     for (const [key, propertyValue] of Object.entries(value as Record<string, unknown>)) {
-      result[key] = virtualizeResponsePaths(propertyValue);
+      result[key] = virtualizeResponsePaths(propertyValue, key);
     }
     return result;
   }
@@ -96,23 +118,28 @@ export function virtualizeResponsePaths(value: unknown): unknown {
 }
 
 /**
- * Recursively walk a JSON-serializable value and devirtualize all string
- * values that look like virtual-root paths. Used at the RPC request
- * boundary so handler code receives actual filesystem paths.
+ * Recursively walk a JSON-serializable value and devirtualize string
+ * values in known path fields. Used at the RPC request boundary
+ * so handler code receives actual filesystem paths.
  */
-export function devirtualizeRequestParams(value: unknown): unknown {
+export function devirtualizeRequestParams(value: unknown, fieldName?: string): unknown {
   if (!isVirtualized) return value;
 
   if (typeof value === "string") {
-    return devirtualizePath(value);
+    // Only devirtualize if this is a known path field
+    if (fieldName && REQUEST_PATH_FIELD_NAMES.has(fieldName)) {
+      return devirtualizePath(value);
+    }
+    return value;
   }
   if (Array.isArray(value)) {
-    return value.map(devirtualizeRequestParams);
+    // Arrays inherit the field name context (e.g., "paths": ["/src/a.ts"])
+    return value.map((item) => devirtualizeRequestParams(item, fieldName));
   }
   if (value !== null && typeof value === "object") {
     const result: Record<string, unknown> = {};
     for (const [key, propertyValue] of Object.entries(value as Record<string, unknown>)) {
-      result[key] = devirtualizeRequestParams(propertyValue);
+      result[key] = devirtualizeRequestParams(propertyValue, key);
     }
     return result;
   }

@@ -10,7 +10,7 @@ import type {
   FileInfoParams, FileDiffParams, MoveFileParams, DeleteFileParams,
   MultiFileReadParams, ListDirectoryParams, CreateDirectoryParams,
   GrepSearchParams, GlobFilesParams,
-  PathValidation, FileInfoEntry, DirectoryEntry, GrepMatch, GlobMatch,
+  PathValidation, FileInfoEntry, DirectoryEntry, GrepMatch, GlobMatch, TreeEntry,
 } from "../types.ts";
 
 
@@ -570,6 +570,54 @@ export class FileHandler {
       const errorObject = error as NodeJS.ErrnoException;
       if (errorObject.code === "ENOENT") return { error: `Directory not found: ${resolved}` };
       return { error: `list_directory failed: ${errorObject.message}` };
+    }
+  }
+
+  /**
+   * Build a nested directory tree structure.
+   * Used by the SystemPromptAssembler to embed project structure in the system prompt.
+   */
+  async directoryTree({ path: dirPath, maxDepth = 2 }: { path: string; maxDepth?: number }) {
+    const validation = this.validatePath(dirPath);
+    if (!validation.safe) return { error: validation.error };
+
+    const resolved = validation.resolved;
+
+    try {
+      const directoryStats = await stat(resolved);
+      if (!directoryStats.isDirectory()) {
+        return { error: `'${resolved}' is a file, not a directory.` };
+      }
+
+      const buildTree = async (currentDirectory: string, currentDepth: number): Promise<TreeEntry[]> => {
+        if (currentDepth > maxDepth) return [];
+
+        const directoryEntries = await readdir(currentDirectory, { withFileTypes: true });
+        const treeEntries: TreeEntry[] = [];
+
+        for (const entry of directoryEntries) {
+          const fullPath = resolve(currentDirectory, entry.name);
+
+          const pathValidation = this.validatePath(fullPath);
+          if (!pathValidation.safe) continue;
+
+          if (entry.isDirectory()) {
+            const children = currentDepth < maxDepth
+              ? await buildTree(fullPath, currentDepth + 1)
+              : [];
+            treeEntries.push({ name: entry.name, type: "directory", children });
+          } else {
+            treeEntries.push({ name: entry.name, type: "file" });
+          }
+        }
+
+        return treeEntries;
+      };
+
+      const entries = await buildTree(resolved, 1);
+      return { entries };
+    } catch (error: unknown) {
+      return { error: `Directory tree fetch failed: ${errorMessage(error)}` };
     }
   }
 

@@ -95,6 +95,7 @@ export class AgentClient {
       // Directory operations
       ["directory.list", (rpcParams) => this.fileHandler.listDirectory(rpcParams as unknown as Parameters<FileHandler["listDirectory"]>[0])],
       ["directory.create", (rpcParams) => this.fileHandler.createDirectory(rpcParams as unknown as Parameters<FileHandler["createDirectory"]>[0])],
+      ["directory.tree", (rpcParams) => this.fileHandler.directoryTree(rpcParams as unknown as Parameters<FileHandler["directoryTree"]>[0])],
 
       // Search operations
       ["search.grep", (rpcParams) => this.fileHandler.grepSearch(rpcParams as unknown as Parameters<FileHandler["grepSearch"]>[0])],
