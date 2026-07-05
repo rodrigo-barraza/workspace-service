@@ -2,8 +2,8 @@
 
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
-import { translatePath } from "../utils.ts";
-import type { GitStatusParams, GitDiffParams, GitLogParams, PathValidation, GitFileChange } from "../types.ts";
+import { validateWorkspacePath } from "../utils.ts";
+import type { GitStatusParams, GitDiffParams, GitLogParams, GitFileChange } from "../types.ts";
 
 const GIT_TIMEOUT_MS = 10_000;
 const MAX_OUTPUT_BYTES = 512 * 1024;
@@ -99,11 +99,8 @@ export class GitHandler {
     this.roots = roots.map((r: string) => resolve(r));
   }
 
-  validatePath(inputPath: string): PathValidation {
-    if (!inputPath || typeof inputPath !== "string") {
-      return { safe: false, resolved: "", error: "Path is required" };
-    }
-    return { safe: true, resolved: resolve(translatePath(inputPath, this.roots)) };
+  validatePath(inputPath: string) {
+    return validateWorkspacePath(inputPath, this.roots);
   }
 
   async status({ path: repoPath }: GitStatusParams) {

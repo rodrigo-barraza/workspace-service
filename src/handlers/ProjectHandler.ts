@@ -2,9 +2,9 @@
 
 import { readdir, stat } from "node:fs/promises";
 import { resolve, basename } from "node:path";
-import { translatePath } from "../utils.ts";
+import { validateWorkspacePath } from "../utils.ts";
 import type { Dirent } from "node:fs";
-import type { ProjectSummaryParams, PathValidation, TreeEntry } from "../types.ts";
+import type { ProjectSummaryParams, TreeEntry } from "../types.ts";
 
 const MAX_TREE_ENTRIES = 1000;
 const MAX_DEPTH = 6;
@@ -21,19 +21,8 @@ export class ProjectHandler {
     this.roots = roots.map((r: string) => resolve(r));
   }
 
-  validatePath(inputPath: string): PathValidation {
-    if (!inputPath || typeof inputPath !== "string") {
-      return { safe: false, resolved: "", error: "Path is required" };
-    }
-    const translated = translatePath(inputPath, this.roots);
-    const resolved = translated.startsWith("/")
-      ? resolve(translated)
-      : resolve(this.roots[0], translated);
-    return { safe: true, resolved };
-  }
-
   async summary({ path: projectPath, maxDepth = MAX_DEPTH }: ProjectSummaryParams) {
-    const validation = this.validatePath(projectPath);
+    const validation = validateWorkspacePath(projectPath, this.roots);
     if (!validation.safe) return { error: validation.error };
 
     const resolved = validation.resolved;

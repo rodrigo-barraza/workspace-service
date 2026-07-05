@@ -179,3 +179,26 @@ export function translateRoots(roots: string[]): string[] {
     return root;
   });
 }
+
+// ────────────────────────────────────────────────────────────
+// Centralized Path Validation
+// ────────────────────────────────────────────────────────────
+
+import type { PathValidation } from "./types.ts";
+
+/**
+ * Validate and resolve an input path against workspace roots.
+ * Relative paths resolve against roots[0] (the workspace root),
+ * absolute paths resolve directly.
+ */
+export function validateWorkspacePath(inputPath: string, roots: string[]): PathValidation {
+  if (!inputPath || typeof inputPath !== "string") {
+    return { safe: false, resolved: "", error: "Path is required" };
+  }
+  const translated = translatePath(inputPath, roots);
+  const resolved = translated.startsWith("/")
+    ? resolve(translated)
+    : resolve(roots[0], translated);
+  return { safe: true, resolved };
+}
+
