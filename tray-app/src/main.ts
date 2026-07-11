@@ -12,6 +12,7 @@ import {
   resetConfiguration,
 } from "./config/ConfigStore.js";
 import { IPC_CHANNELS } from "./shared/ipc-channels.js";
+import { detectWslDistros, checkNodeInDistro } from "./agent/WslDetector.js";
 
 const isHiddenLaunch = process.argv.includes("--hidden");
 
@@ -105,6 +106,14 @@ function registerIpcHandlers(): void {
     });
     setConfiguration({ openAtLogin: isEnabled });
     return isEnabled;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WSL_DETECT_DISTROS, async () => {
+    return detectWslDistros();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WSL_CHECK_NODE, async (_event, distroName: string) => {
+    return checkNodeInDistro(distroName);
   });
 }
 

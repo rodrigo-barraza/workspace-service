@@ -39,11 +39,60 @@
         <input type="password" id="settings-secret" class="field-input" placeholder="Enter API secret">
       </div>
 
+      <!-- WSL Mode Toggle (Windows only) -->
+      <div class="form-field" id="settings-wsl-mode-section" style="display:none">
+        <label class="field-label">Run Agent On</label>
+        <div class="run-mode-selector">
+          <button type="button" class="run-mode-button is-active-state" id="settings-mode-native-button" data-mode="native">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+            Windows
+          </button>
+          <button type="button" class="run-mode-button" id="settings-mode-wsl-button" data-mode="wsl">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <polyline points="4 17 10 11 4 5"></polyline>
+              <line x1="12" y1="19" x2="20" y2="19"></line>
+            </svg>
+            WSL2
+          </button>
+        </div>
+      </div>
+
+      <!-- WSL Distro Selection -->
+      <div class="form-field" id="settings-wsl-distro-section" style="display:none">
+        <label class="field-label" for="settings-wsl-distro-select">WSL Distro</label>
+        <div class="distro-select-wrapper">
+          <select id="settings-wsl-distro-select" class="field-input field-select">
+            <option value="" disabled selected>Detecting distros…</option>
+          </select>
+          <button type="button" id="settings-refresh-distros-button" class="refresh-distros-button" title="Refresh">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+            </svg>
+          </button>
+        </div>
+        <div class="wsl-node-status" id="settings-wsl-node-status" style="display:none">
+          <span class="wsl-node-status-dot" id="settings-wsl-node-status-dot"></span>
+          <span class="wsl-node-status-text" id="settings-wsl-node-status-text"></span>
+        </div>
+      </div>
+
       <div class="form-field">
         <label class="field-label">Workspace Folder</label>
         <div class="folder-field-wrapper">
           <input type="text" id="settings-workspace-path" class="field-input" placeholder="Select a directory…" readonly>
           <button type="button" id="settings-browse-button" class="browse-button">Browse…</button>
+        </div>
+        <!-- Translated Linux path in WSL mode -->
+        <div class="wsl-translated-path" id="settings-wsl-translated-path" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+          <span id="settings-wsl-translated-path-text"></span>
         </div>
       </div>
 
@@ -121,6 +170,133 @@
     const statusDot = document.getElementById("status-dot");
     const statusLabel = document.getElementById("status-label");
 
+    // WSL elements
+    const settingsWslModeSection = document.getElementById("settings-wsl-mode-section");
+    const settingsWslDistroSection = document.getElementById("settings-wsl-distro-section");
+    const settingsModeNativeButton = document.getElementById("settings-mode-native-button");
+    const settingsModeWslButton = document.getElementById("settings-mode-wsl-button");
+    const settingsWslDistroSelect = document.getElementById("settings-wsl-distro-select");
+    const settingsRefreshDistrosButton = document.getElementById("settings-refresh-distros-button");
+    const settingsWslNodeStatus = document.getElementById("settings-wsl-node-status");
+    const settingsWslNodeStatusDot = document.getElementById("settings-wsl-node-status-dot");
+    const settingsWslNodeStatusText = document.getElementById("settings-wsl-node-status-text");
+    const settingsWslTranslatedPath = document.getElementById("settings-wsl-translated-path");
+    const settingsWslTranslatedPathText = document.getElementById("settings-wsl-translated-path-text");
+
+    let settingsCurrentMode = "native";
+    let settingsSelectedDistroHasNode = false;
+
+    // ── WSL Path Translation ─────────────────────────────────
+
+    function translateUncPathToLinux(windowsPath) {
+      const normalizedPath = windowsPath.replace(/\//g, "\\");
+      const wslUncPattern = /^\\\\(?:wsl\.localhost|wsl\$)\\([^\\]+)(.*)$/i;
+      const matchResult = normalizedPath.match(wslUncPattern);
+      if (matchResult) {
+        const remainingPath = matchResult[2] || "";
+        return remainingPath.replace(/\\/g, "/") || "/";
+      }
+      return null;
+    }
+
+    function updateSettingsTranslatedPath() {
+      const windowsPath = workspacePathInput.value;
+      if (settingsCurrentMode !== "wsl" || !windowsPath) {
+        settingsWslTranslatedPath.style.display = "none";
+        return;
+      }
+      const linuxPath = translateUncPathToLinux(windowsPath);
+      if (linuxPath) {
+        settingsWslTranslatedPathText.textContent = `Linux path: ${linuxPath}`;
+        settingsWslTranslatedPath.style.display = "flex";
+      } else {
+        settingsWslTranslatedPathText.textContent = "Could not detect Linux path — using raw path";
+        settingsWslTranslatedPath.style.display = "flex";
+      }
+    }
+
+    // ── WSL Mode Toggle ──────────────────────────────────────
+
+    function setSettingsMode(mode) {
+      settingsCurrentMode = mode;
+      settingsModeNativeButton.classList.toggle("is-active-state", mode === "native");
+      settingsModeWslButton.classList.toggle("is-active-state", mode === "wsl");
+      settingsWslDistroSection.style.display = mode === "wsl" ? "" : "none";
+
+      if (mode === "wsl") {
+        loadSettingsDistros();
+      } else {
+        settingsWslTranslatedPath.style.display = "none";
+      }
+
+      updateSettingsTranslatedPath();
+    }
+
+    settingsModeNativeButton.addEventListener("click", () => setSettingsMode("native"));
+    settingsModeWslButton.addEventListener("click", () => setSettingsMode("wsl"));
+
+    // ── WSL Distro Detection ─────────────────────────────────
+
+    async function loadSettingsDistros() {
+      settingsWslDistroSelect.innerHTML = '<option value="" disabled selected>Detecting distros…</option>';
+      settingsWslNodeStatus.style.display = "none";
+      settingsSelectedDistroHasNode = false;
+
+      try {
+        const distros = await window.prismAgent.detectWslDistros();
+        const wsl2Distros = distros.filter((distro) => distro.version === 2);
+
+        if (wsl2Distros.length === 0) {
+          settingsWslDistroSelect.innerHTML = '<option value="" disabled selected>No WSL2 distros found</option>';
+          return;
+        }
+
+        settingsWslDistroSelect.innerHTML = '<option value="" disabled>Select a distro…</option>';
+        for (const distro of wsl2Distros) {
+          const option = document.createElement("option");
+          option.value = distro.name;
+          const stateLabel = distro.state === "Running" ? "" : ` (${distro.state})`;
+          const defaultLabel = distro.isDefault ? " ★" : "";
+          option.textContent = `${distro.name}${stateLabel}${defaultLabel}`;
+          settingsWslDistroSelect.appendChild(option);
+        }
+      } catch {
+        settingsWslDistroSelect.innerHTML = '<option value="" disabled selected>Error detecting distros</option>';
+      }
+    }
+
+    settingsWslDistroSelect.addEventListener("change", async () => {
+      if (settingsWslDistroSelect.value) {
+        await checkSettingsNodeAvailability(settingsWslDistroSelect.value);
+      }
+    });
+
+    settingsRefreshDistrosButton.addEventListener("click", () => loadSettingsDistros());
+
+    async function checkSettingsNodeAvailability(distroName) {
+      settingsWslNodeStatus.style.display = "flex";
+      settingsWslNodeStatusDot.className = "wsl-node-status-dot checking";
+      settingsWslNodeStatusText.textContent = "Checking Node.js…";
+      settingsSelectedDistroHasNode = false;
+
+      try {
+        const nodeVersion = await window.prismAgent.checkWslNode(distroName);
+        if (nodeVersion) {
+          settingsWslNodeStatusDot.className = "wsl-node-status-dot available";
+          settingsWslNodeStatusText.textContent = `Node.js ${nodeVersion}`;
+          settingsSelectedDistroHasNode = true;
+        } else {
+          settingsWslNodeStatusDot.className = "wsl-node-status-dot unavailable";
+          settingsWslNodeStatusText.textContent = "Node.js not found — install it in this distro";
+        }
+      } catch {
+        settingsWslNodeStatusDot.className = "wsl-node-status-dot unavailable";
+        settingsWslNodeStatusText.textContent = "Could not check Node.js";
+      }
+    }
+
+    // ── Load Configuration ───────────────────────────────────
+
     async function loadConfiguration() {
       const configuration = await window.prismAgent.getConfig();
       backendUrlInput.value = configuration.backendUrl || "";
@@ -130,6 +306,22 @@
 
       const isAutoLaunch = await window.prismAgent.getAutoLaunch();
       autoLaunchToggle.checked = isAutoLaunch;
+
+      // Restore WSL mode
+      if (configuration.wslDistro) {
+        settingsCurrentMode = "wsl";
+        settingsModeNativeButton.classList.remove("is-active-state");
+        settingsModeWslButton.classList.add("is-active-state");
+        settingsWslDistroSection.style.display = "";
+
+        await loadSettingsDistros();
+        settingsWslDistroSelect.value = configuration.wslDistro;
+        if (settingsWslDistroSelect.value) {
+          await checkSettingsNodeAvailability(configuration.wslDistro);
+        }
+
+        updateSettingsTranslatedPath();
+      }
 
       await updateStatus();
     }
@@ -141,22 +333,54 @@
       statusLabel.textContent = labelMap[status.connectionStatus] || "Unknown";
     }
 
+    // ── WSL Auto-Detection ───────────────────────────────────
+
+    async function initializeSettingsWslSupport() {
+      try {
+        const distros = await window.prismAgent.detectWslDistros();
+        const hasWsl2 = distros.some((distro) => distro.version === 2);
+        if (hasWsl2) {
+          settingsWslModeSection.style.display = "";
+        }
+      } catch {
+        // WSL not available
+      }
+    }
+
+    initializeSettingsWslSupport();
+
+    // ── Event Handlers ───────────────────────────────────────
+
     browseButton.addEventListener("click", async () => {
       const selectedPath = await window.prismAgent.openFolderDialog();
       if (selectedPath) {
         workspacePathInput.value = selectedPath;
+        updateSettingsTranslatedPath();
       }
     });
 
     saveButton.addEventListener("click", async () => {
       saveButton.disabled = true;
       saveButton.textContent = "Saving…";
-      await window.prismAgent.setConfig({
+
+      const windowsPath = workspacePathInput.value.trim();
+      const isWslMode = settingsCurrentMode === "wsl";
+
+      const configurationUpdate = {
         backendUrl: backendUrlInput.value.trim(),
         secret: secretInput.value.trim(),
-        workspaceRoots: [workspacePathInput.value.trim()],
+        workspaceRoots: [windowsPath],
         agentName: agentNameInput.value.trim(),
-      });
+        wslDistro: isWslMode ? settingsWslDistroSelect.value : "",
+        wslLinuxPaths: [],
+      };
+
+      if (isWslMode) {
+        const linuxPath = translateUncPathToLinux(windowsPath);
+        configurationUpdate.wslLinuxPaths = linuxPath ? [linuxPath] : [windowsPath];
+      }
+
+      await window.prismAgent.setConfig(configurationUpdate);
       await window.prismAgent.agentRestart();
       saveButton.textContent = "Save & Reconnect";
       saveButton.disabled = false;
@@ -176,6 +400,11 @@
       if (confirm("Reset all settings? The connector will disconnect and you will need to reconfigure.")) {
         await window.prismAgent.agentStop();
         await window.prismAgent.resetConfig();
+        settingsCurrentMode = "native";
+        settingsModeNativeButton.classList.add("is-active-state");
+        settingsModeWslButton.classList.remove("is-active-state");
+        settingsWslDistroSection.style.display = "none";
+        settingsWslTranslatedPath.style.display = "none";
         await loadConfiguration();
       }
     });

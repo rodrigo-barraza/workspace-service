@@ -373,3 +373,146 @@ html, body {
   word-break: break-all;
   margin: 0;
 }
+
+/* ── WSL Mode Toggle ────────────────────────────────────── */
+
+.run-mode-selector {
+  display: flex;
+  gap: 0;
+  border-radius: var(--radius-small);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+}
+
+.run-mode-button {
+  flex: 1;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  font-family: var(--font-family);
+  color: var(--text-secondary);
+  background: var(--input-background);
+  border: none;
+  cursor: pointer;
+  transition: background var(--transition-standard), color var(--transition-standard);
+}
+
+.run-mode-button:not(:last-child) {
+  border-inline-end: 1px solid var(--border-subtle);
+}
+
+.run-mode-button:hover:not(.is-active-state) {
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+}
+
+.run-mode-button.is-active-state {
+  background: oklch(0.55 0.2 270 / 0.15);
+  color: oklch(0.75 0.15 270);
+  font-weight: 600;
+}
+
+/* ── Distro Select ──────────────────────────────────────── */
+
+.distro-select-wrapper {
+  display: flex;
+  gap: 8px;
+}
+
+.field-select {
+  flex: 1;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-inline-end: 32px;
+  cursor: pointer;
+}
+
+.refresh-distros-button {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-small);
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--transition-standard), color var(--transition-standard), border-color var(--transition-standard);
+}
+
+.refresh-distros-button:hover {
+  background: var(--background-tertiary);
+  color: var(--text-primary);
+  border-color: var(--border-focused);
+}
+
+/* ── Node.js Status ─────────────────────────────────────── */
+
+.wsl-node-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-block-start: 2px;
+}
+
+.wsl-node-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.wsl-node-status-dot.checking {
+  background: oklch(0.75 0.15 60);
+  animation: pulse-dot 1s ease-in-out infinite;
+}
+
+.wsl-node-status-dot.available {
+  background: oklch(0.7 0.2 145);
+  box-shadow: 0 0 6px oklch(0.7 0.2 145 / 0.5);
+}
+
+.wsl-node-status-dot.unavailable {
+  background: oklch(0.6 0.2 25);
+  box-shadow: 0 0 6px oklch(0.6 0.2 25 / 0.4);
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.wsl-node-status-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* ── Translated Path ────────────────────────────────────── */
+
+.wsl-translated-path {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  margin-block-start: 4px;
+  background: oklch(0.55 0.2 270 / 0.06);
+  border-radius: var(--radius-small);
+  border: 1px solid oklch(0.55 0.2 270 / 0.12);
+  color: oklch(0.75 0.12 270);
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+
+.wsl-translated-path svg {
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+

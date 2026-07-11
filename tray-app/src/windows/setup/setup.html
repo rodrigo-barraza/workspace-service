@@ -21,7 +21,7 @@
         </svg>
       </div>
       <h1 class="setup-title">Connect Your Workspace</h1>
-      <p class="setup-subtitle">Set up the workspace connector to bridge your local files with Prism’s AI tools</p>
+      <p class="setup-subtitle">Set up the workspace connector to bridge your local files with Prism's AI tools</p>
     </header>
 
     <form id="setup-form" class="setup-form">
@@ -62,6 +62,48 @@
         <span class="field-hint">Your Prism API access token for authentication</span>
       </div>
 
+      <!-- WSL Mode Toggle (Windows only) -->
+      <div class="form-field" id="wsl-mode-section" style="display:none">
+        <label class="field-label">Run Agent On</label>
+        <div class="run-mode-selector">
+          <button type="button" class="run-mode-button is-active-state" id="mode-native-button" data-mode="native">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+            Windows
+          </button>
+          <button type="button" class="run-mode-button" id="mode-wsl-button" data-mode="wsl">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <polyline points="4 17 10 11 4 5"></polyline>
+              <line x1="12" y1="19" x2="20" y2="19"></line>
+            </svg>
+            WSL2
+          </button>
+        </div>
+      </div>
+
+      <!-- WSL Distro Selection (shown when WSL mode is active) -->
+      <div class="form-field" id="wsl-distro-section" style="display:none">
+        <label class="field-label" for="wsl-distro-select">WSL Distro</label>
+        <div class="distro-select-wrapper">
+          <select id="wsl-distro-select" class="field-input field-select">
+            <option value="" disabled selected>Detecting distros…</option>
+          </select>
+          <button type="button" id="refresh-distros-button" class="refresh-distros-button" title="Refresh">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+            </svg>
+          </button>
+        </div>
+        <div class="wsl-node-status" id="wsl-node-status" style="display:none">
+          <span class="wsl-node-status-dot" id="wsl-node-status-dot"></span>
+          <span class="wsl-node-status-text" id="wsl-node-status-text"></span>
+        </div>
+      </div>
+
       <div class="form-field">
         <label class="field-label" for="workspace-path-input">Workspace Folder</label>
         <div class="folder-field-wrapper">
@@ -77,7 +119,14 @@
             Browse…
           </button>
         </div>
-        <span class="field-hint">Local directory to give Prism file, git, and shell access</span>
+        <span class="field-hint" id="workspace-path-hint">Local directory to give Prism file, git, and shell access</span>
+        <!-- Translated Linux path shown in WSL mode -->
+        <div class="wsl-translated-path" id="wsl-translated-path" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+          <span id="wsl-translated-path-text"></span>
+        </div>
       </div>
 
       <div class="form-actions">
@@ -107,16 +156,43 @@
     const eyeOffIcon = document.getElementById("eye-off-icon");
     const setupForm = document.getElementById("setup-form");
 
+    // WSL elements
+    const wslModeSection = document.getElementById("wsl-mode-section");
+    const wslDistroSection = document.getElementById("wsl-distro-section");
+    const modeNativeButton = document.getElementById("mode-native-button");
+    const modeWslButton = document.getElementById("mode-wsl-button");
+    const wslDistroSelect = document.getElementById("wsl-distro-select");
+    const refreshDistrosButton = document.getElementById("refresh-distros-button");
+    const wslNodeStatus = document.getElementById("wsl-node-status");
+    const wslNodeStatusDot = document.getElementById("wsl-node-status-dot");
+    const wslNodeStatusText = document.getElementById("wsl-node-status-text");
+    const wslTranslatedPath = document.getElementById("wsl-translated-path");
+    const wslTranslatedPathText = document.getElementById("wsl-translated-path-text");
+    const workspacePathHint = document.getElementById("workspace-path-hint");
+
+    let currentMode = "native";
+    let detectedDistros = [];
+    let selectedDistroHasNode = false;
+
+    // ── Form Validation ──────────────────────────────────────
+
     function validateForm() {
-      const isValid = backendUrlInput.value.trim() &&
-                      secretInput.value.trim() &&
-                      workspacePathInput.value.trim();
+      let isValid = backendUrlInput.value.trim() &&
+                    secretInput.value.trim() &&
+                    workspacePathInput.value.trim();
+
+      if (currentMode === "wsl") {
+        isValid = isValid && wslDistroSelect.value && selectedDistroHasNode;
+      }
+
       connectButton.disabled = !isValid;
     }
 
     backendUrlInput.addEventListener("input", validateForm);
     secretInput.addEventListener("input", validateForm);
     workspacePathInput.addEventListener("input", validateForm);
+
+    // ── Secret Visibility Toggle ─────────────────────────────
 
     toggleSecretVisibility.addEventListener("click", () => {
       const isPassword = secretInput.type === "password";
@@ -125,25 +201,186 @@
       eyeOffIcon.style.display = isPassword ? "block" : "none";
     });
 
+    // ── Folder Browse ────────────────────────────────────────
+
     browseFolderButton.addEventListener("click", async () => {
       const selectedPath = await window.prismAgent.openFolderDialog();
       if (selectedPath) {
         workspacePathInput.value = selectedPath;
+        updateTranslatedPath(selectedPath);
         validateForm();
       }
     });
+
+    // ── WSL Path Translation ─────────────────────────────────
+
+    function translateUncPathToLinux(windowsPath) {
+      const normalizedPath = windowsPath.replace(/\//g, "\\");
+      const wslUncPattern = /^\\\\(?:wsl\.localhost|wsl\$)\\([^\\]+)(.*)$/i;
+      const matchResult = normalizedPath.match(wslUncPattern);
+      if (matchResult) {
+        const remainingPath = matchResult[2] || "";
+        return remainingPath.replace(/\\/g, "/") || "/";
+      }
+      return null;
+    }
+
+    function updateTranslatedPath(windowsPath) {
+      if (currentMode !== "wsl" || !windowsPath) {
+        wslTranslatedPath.style.display = "none";
+        return;
+      }
+
+      const linuxPath = translateUncPathToLinux(windowsPath);
+      if (linuxPath) {
+        wslTranslatedPathText.textContent = `Linux path: ${linuxPath}`;
+        wslTranslatedPath.style.display = "flex";
+      } else {
+        wslTranslatedPathText.textContent = "Could not detect Linux path — using raw path";
+        wslTranslatedPath.style.display = "flex";
+      }
+    }
+
+    // ── WSL Mode Toggle ──────────────────────────────────────
+
+    function setMode(mode) {
+      currentMode = mode;
+
+      modeNativeButton.classList.toggle("is-active-state", mode === "native");
+      modeWslButton.classList.toggle("is-active-state", mode === "wsl");
+
+      wslDistroSection.style.display = mode === "wsl" ? "" : "none";
+
+      if (mode === "wsl") {
+        workspacePathHint.textContent = "Browse to your WSL folder (via \\\\wsl.localhost\\) — the Linux path is resolved automatically";
+        loadDistros();
+      } else {
+        workspacePathHint.textContent = "Local directory to give Prism file, git, and shell access";
+        wslTranslatedPath.style.display = "none";
+      }
+
+      updateTranslatedPath(workspacePathInput.value);
+      validateForm();
+    }
+
+    modeNativeButton.addEventListener("click", () => setMode("native"));
+    modeWslButton.addEventListener("click", () => setMode("wsl"));
+
+    // ── WSL Distro Detection ─────────────────────────────────
+
+    async function loadDistros() {
+      wslDistroSelect.innerHTML = '<option value="" disabled selected>Detecting distros…</option>';
+      wslNodeStatus.style.display = "none";
+      selectedDistroHasNode = false;
+
+      try {
+        const distros = await window.prismAgent.detectWslDistros();
+        detectedDistros = distros.filter((distro) => distro.version === 2);
+
+        if (detectedDistros.length === 0) {
+          wslDistroSelect.innerHTML = '<option value="" disabled selected>No WSL2 distros found</option>';
+          return;
+        }
+
+        wslDistroSelect.innerHTML = '<option value="" disabled selected>Select a distro…</option>';
+        for (const distro of detectedDistros) {
+          const option = document.createElement("option");
+          option.value = distro.name;
+          const stateLabel = distro.state === "Running" ? "" : ` (${distro.state})`;
+          const defaultLabel = distro.isDefault ? " ★" : "";
+          option.textContent = `${distro.name}${stateLabel}${defaultLabel}`;
+          wslDistroSelect.appendChild(option);
+        }
+
+        // Auto-select default distro
+        const defaultDistro = detectedDistros.find((distro) => distro.isDefault);
+        if (defaultDistro) {
+          wslDistroSelect.value = defaultDistro.name;
+          await checkNodeAvailability(defaultDistro.name);
+        }
+      } catch {
+        wslDistroSelect.innerHTML = '<option value="" disabled selected>Error detecting distros</option>';
+      }
+
+      validateForm();
+    }
+
+    wslDistroSelect.addEventListener("change", async () => {
+      if (wslDistroSelect.value) {
+        await checkNodeAvailability(wslDistroSelect.value);
+        validateForm();
+      }
+    });
+
+    refreshDistrosButton.addEventListener("click", () => loadDistros());
+
+    async function checkNodeAvailability(distroName) {
+      wslNodeStatus.style.display = "flex";
+      wslNodeStatusDot.className = "wsl-node-status-dot checking";
+      wslNodeStatusText.textContent = "Checking Node.js…";
+      selectedDistroHasNode = false;
+
+      try {
+        const nodeVersion = await window.prismAgent.checkWslNode(distroName);
+        if (nodeVersion) {
+          wslNodeStatusDot.className = "wsl-node-status-dot available";
+          wslNodeStatusText.textContent = `Node.js ${nodeVersion}`;
+          selectedDistroHasNode = true;
+        } else {
+          wslNodeStatusDot.className = "wsl-node-status-dot unavailable";
+          wslNodeStatusText.textContent = "Node.js not found — install it in this distro";
+          selectedDistroHasNode = false;
+        }
+      } catch {
+        wslNodeStatusDot.className = "wsl-node-status-dot unavailable";
+        wslNodeStatusText.textContent = "Could not check Node.js";
+        selectedDistroHasNode = false;
+      }
+
+      validateForm();
+    }
+
+    // ── WSL Auto-Detection on Load ───────────────────────────
+
+    async function initializeWslSupport() {
+      try {
+        const distros = await window.prismAgent.detectWslDistros();
+        const hasWsl2 = distros.some((distro) => distro.version === 2);
+        if (hasWsl2) {
+          wslModeSection.style.display = "";
+        }
+      } catch {
+        // WSL not available — keep section hidden
+      }
+    }
+
+    initializeWslSupport();
+
+    // ── Form Submission ──────────────────────────────────────
 
     setupForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       connectButton.disabled = true;
       connectButton.textContent = "Connecting…";
 
-      await window.prismAgent.completeSetup({
+      const windowsPath = workspacePathInput.value.trim();
+      const isWslMode = currentMode === "wsl";
+
+      const configuration = {
         backendUrl: backendUrlInput.value.trim(),
         secret: secretInput.value.trim(),
-        workspaceRoots: [workspacePathInput.value.trim()],
+        workspaceRoots: [windowsPath],
         openAtLogin: true,
-      });
+        wslDistro: isWslMode ? wslDistroSelect.value : "",
+        wslLinuxPaths: [],
+      };
+
+      if (isWslMode) {
+        const linuxPath = translateUncPathToLinux(windowsPath);
+        configuration.wslLinuxPaths = linuxPath ? [linuxPath] : [windowsPath];
+      }
+
+      await window.prismAgent.completeSetup(configuration);
 
       // Register OS-level login item so the app survives reboots
       await window.prismAgent.setAutoLaunch(true);

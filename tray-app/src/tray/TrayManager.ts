@@ -1,6 +1,7 @@
 import { Tray, Menu, nativeImage, app, dialog, BrowserWindow, Notification } from "electron";
 import { resolve } from "node:path";
 import { agentProcess } from "../agent/AgentProcess.js";
+import { wslUncPathToLinuxPath } from "../agent/WslDetector.js";
 import { getConfiguration, setConfiguration, hasValidConfiguration } from "../config/ConfigStore.js";
 import type { AgentConnectionStatus } from "../shared/types.js";
 
@@ -45,6 +46,9 @@ function buildContextMenu(): Menu {
     ? configuration.backendUrl.replace(/^wss?:\/\//, "").replace(/\/ws\/agent$/, "")
     : "Not configured";
 
+  const wslDistro = configuration.wslDistro?.trim();
+  const modeLabel = wslDistro ? `WSL2 (${wslDistro})` : "Native";
+
   return Menu.buildFromTemplate([
     {
       label: `Status: ${STATUS_LABELS[currentStatus]}`,
@@ -53,6 +57,10 @@ function buildContextMenu(): Menu {
     },
     {
       label: `Backend: ${backendLabel}`,
+      enabled: false,
+    },
+    {
+      label: `Mode: ${modeLabel}`,
       enabled: false,
     },
     { type: "separator" },
@@ -81,7 +89,14 @@ function buildContextMenu(): Menu {
           defaultPath: configuration.workspaceRoots[0] || undefined,
         });
         if (!result.canceled && result.filePaths.length > 0) {
-          setConfiguration({ workspaceRoots: result.filePaths });
+          const configurationUpdate: Record<string, unknown> = { workspaceRoots: result.filePaths };
+
+          if (wslDistro) {
+            const uncResult = wslUncPathToLinuxPath(result.filePaths[0]);
+            configurationUpdate.wslLinuxPaths = uncResult ? [uncResult.linuxPath] : result.filePaths;
+          }
+
+          setConfiguration(configurationUpdate);
           if (isRunning) {
             agentProcess.restart();
           }

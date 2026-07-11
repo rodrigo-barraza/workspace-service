@@ -11,6 +11,8 @@ const configurationSchema = {
   workspaceRoots: { type: "array" as const, default: [] as string[], items: { type: "string" as const } },
   agentName: { type: "string" as const, default: hostname() },
   openAtLogin: { type: "boolean" as const, default: true },
+  wslDistro: { type: "string" as const, default: "" },
+  wslLinuxPaths: { type: "array" as const, default: [] as string[], items: { type: "string" as const } },
 };
 
 const store = new Store({ schema: configurationSchema, name: "prism-workspace-agent" });
@@ -41,6 +43,8 @@ export function getConfiguration(): AgentConfiguration {
     workspaceRoots: store.get("workspaceRoots") as string[],
     agentName: store.get("agentName") as string,
     openAtLogin: store.get("openAtLogin") as boolean,
+    wslDistro: store.get("wslDistro") as string,
+    wslLinuxPaths: store.get("wslLinuxPaths") as string[],
   };
 }
 
@@ -60,6 +64,12 @@ export function setConfiguration(partialConfiguration: Partial<AgentConfiguratio
   if (partialConfiguration.openAtLogin !== undefined) {
     store.set("openAtLogin", partialConfiguration.openAtLogin);
   }
+  if (partialConfiguration.wslDistro !== undefined) {
+    store.set("wslDistro", partialConfiguration.wslDistro);
+  }
+  if (partialConfiguration.wslLinuxPaths !== undefined) {
+    store.set("wslLinuxPaths", partialConfiguration.wslLinuxPaths);
+  }
 }
 
 export function hasValidConfiguration(): boolean {
@@ -74,3 +84,4 @@ export function hasValidConfiguration(): boolean {
 export function resetConfiguration(): void {
   store.clear();
 }
+
