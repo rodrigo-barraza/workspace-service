@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline';">
-  <title>Prism Workspace Agent — Settings</title>
+  <title>Prism Workspace — Settings</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
@@ -48,7 +48,7 @@
       </div>
 
       <div class="form-field">
-        <label class="field-label" for="settings-agent-name">Agent Name</label>
+        <label class="field-label" for="settings-agent-name">Host Name</label>
         <input type="text" id="settings-agent-name" class="field-input" placeholder="e.g. my-laptop">
       </div>
 
@@ -63,7 +63,7 @@
       <div class="toggle-row">
         <div class="toggle-label-group">
           <span class="toggle-title">Open on Startup</span>
-          <span class="toggle-description">Automatically start the agent when you log in</span>
+          <span class="toggle-description">Automatically start the connector when you log in</span>
         </div>
         <label class="switch-element">
           <input type="checkbox" id="auto-launch-toggle">
@@ -173,7 +173,7 @@
     });
 
     resetButton.addEventListener("click", async () => {
-      if (confirm("Reset all settings? The agent will disconnect and you will need to reconfigure.")) {
+      if (confirm("Reset all settings? The connector will disconnect and you will need to reconfigure.")) {
         await window.prismAgent.agentStop();
         await window.prismAgent.resetConfig();
         await loadConfiguration();

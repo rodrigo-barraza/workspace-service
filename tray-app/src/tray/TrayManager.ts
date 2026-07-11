@@ -129,7 +129,7 @@ function updateTrayIcon(status: AgentConnectionStatus): void {
   currentStatus = status;
   if (tray) {
     tray.setImage(createTrayIcon(STATUS_ICONS[status]));
-    tray.setToolTip(`Prism Workspace Agent — ${STATUS_LABELS[status]}`);
+    tray.setToolTip(`Prism Workspace — ${STATUS_LABELS[status]}`);
     rebuildMenu();
   }
 }
@@ -152,7 +152,7 @@ function openSettingsWindow(): void {
     resizable: false,
     maximizable: false,
     fullscreenable: false,
-    title: "Prism Workspace Agent — Settings",
+    title: "Prism Workspace — Settings",
     autoHideMenuBar: true,
     webPreferences: {
       preload: resolve(import.meta.dirname, "../windows/settings/settings-preload.cjs"),
@@ -177,7 +177,7 @@ export function openSetupWindow(): Promise<void> {
       resizable: false,
       maximizable: false,
       fullscreenable: false,
-      title: "Prism Workspace Agent — Setup",
+      title: "Prism Workspace — Setup",
       autoHideMenuBar: true,
       webPreferences: {
         preload: resolve(import.meta.dirname, "../windows/setup/setup-preload.cjs"),
@@ -197,7 +197,7 @@ export function openSetupWindow(): Promise<void> {
 
 export function initializeTray(): void {
   tray = new Tray(createTrayIcon(STATUS_ICONS.disconnected));
-  tray.setToolTip("Prism Workspace Agent — Disconnected");
+  tray.setToolTip("Prism Workspace — Disconnected");
   tray.setContextMenu(buildContextMenu());
 
   agentProcess.on("status-changed", (status: AgentConnectionStatus) => {
@@ -205,9 +205,9 @@ export function initializeTray(): void {
     updateTrayIcon(status);
 
     if (status === "connected") {
-      showNotification("Prism Agent", "Workspace connected successfully");
+      showNotification("Prism Workspace", "Connected successfully");
     } else if (status === "disconnected" && previousStatus === "connected") {
-      showNotification("Prism Agent", "Workspace disconnected");
+      showNotification("Prism Workspace", "Disconnected");
     }
   });
 
