@@ -15,7 +15,7 @@
 import { readFile, writeFile, stat, readdir, mkdir, rename, unlink } from "node:fs/promises";
 import { resolve, relative, extname, dirname, basename } from "node:path";
 import { existsSync, statSync } from "node:fs";
-import { hostname } from "node:os";
+import { hostname, platform, arch, release, userInfo, cpus, totalmem } from "node:os";
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
@@ -669,10 +669,21 @@ export class WorkspaceAgent extends EventEmitter {
 
   _register() {
     const logger = getLogger();
+    const cpuInfo = cpus();
+    const hostInfo = {
+      hostname: hostname(),
+      platform: platform(),
+      arch: arch(),
+      release: release(),
+      username: (() => { try { return userInfo().username; } catch { return undefined; } })(),
+      cpuModel: cpuInfo.length > 0 ? cpuInfo[0].model : undefined,
+      cpuCores: cpuInfo.length || undefined,
+      totalMemoryBytes: totalmem(),
+    };
     this._send({
       jsonrpc: "2.0",
       method: "agent.register",
-      params: { agentId: this.agentId, name: this.name, roots: this.roots, capabilities: ["file", "git", "command", "project"], version: "0.1.0" },
+      params: { agentId: this.agentId, name: this.name, roots: this.roots, capabilities: ["file", "git", "command", "project"], version: "0.1.0", hostInfo },
     });
     logger.info(`Registered agent "${this.name}" with ${this.roots.length} root(s)`);
   }

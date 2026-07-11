@@ -217,7 +217,6 @@ export class AgentClient {
         name: this.name,
         roots: this.virtualRoots,
         capabilities: ["file", "git", "command", "project"],
-        version: "0.1.0",
         hostInfo: {
           hostname: os.hostname(),
           platform: os.platform(),
