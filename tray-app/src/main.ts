@@ -121,6 +121,23 @@ app.whenReady().then(async () => {
   registerIpcHandlers();
   initializeTray();
 
+  // Reconcile OS-level login item with stored preference on every startup.
+  // This ensures the tray app re-registers itself if the OS login item was
+  // lost (e.g. reinstall, OS update, or manual registry/plist removal).
+  if (hasValidConfiguration()) {
+    const configuration = getConfiguration();
+    const currentLoginSettings = app.getLoginItemSettings();
+    if (configuration.openAtLogin && !currentLoginSettings.openAtLogin) {
+      app.setLoginItemSettings({
+        openAtLogin: true,
+        openAsHidden: true,
+        args: ["--hidden"],
+      });
+    } else if (!configuration.openAtLogin && currentLoginSettings.openAtLogin) {
+      app.setLoginItemSettings({ openAtLogin: false });
+    }
+  }
+
   if (hasValidConfiguration()) {
     // Config exists — start agent immediately
     const configuration = getConfiguration();

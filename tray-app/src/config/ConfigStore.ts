@@ -10,7 +10,7 @@ const configurationSchema = {
   encryptedSecret: { type: "string" as const, default: "" },
   workspaceRoots: { type: "array" as const, default: [] as string[], items: { type: "string" as const } },
   agentName: { type: "string" as const, default: hostname() },
-  openAtLogin: { type: "boolean" as const, default: false },
+  openAtLogin: { type: "boolean" as const, default: true },
 };
 
 const store = new Store({ schema: configurationSchema, name: "prism-workspace-agent" });

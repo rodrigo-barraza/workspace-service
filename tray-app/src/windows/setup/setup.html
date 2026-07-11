@@ -142,7 +142,11 @@
         backendUrl: backendUrlInput.value.trim(),
         secret: secretInput.value.trim(),
         workspaceRoots: [workspacePathInput.value.trim()],
+        openAtLogin: true,
       });
+
+      // Register OS-level login item so the app survives reboots
+      await window.prismAgent.setAutoLaunch(true);
 
       window.close();
     });
