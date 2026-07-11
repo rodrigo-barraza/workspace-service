@@ -12,6 +12,8 @@ export const IPC_CHANNELS = {
   LOG_GET_ALL: "log:get-all",
   GET_AUTO_LAUNCH: "autolaunch:get",
   SET_AUTO_LAUNCH: "autolaunch:set",
+  WSL_DETECT_DISTROS: "wsl:detect-distros",
+  WSL_CHECK_NODE: "wsl:check-node",
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

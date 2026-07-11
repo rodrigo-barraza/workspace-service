@@ -4,6 +4,15 @@ export interface AgentConfiguration {
   workspaceRoots: string[];
   agentName: string;
   openAtLogin: boolean;
+  wslDistro: string;
+  wslLinuxPaths: string[];
+}
+
+export interface WslDistroInfo {
+  name: string;
+  state: "Running" | "Stopped" | "Installing" | "Unknown";
+  version: number;
+  isDefault: boolean;
 }
 
 export type AgentConnectionStatus = "connected" | "disconnected" | "connecting";

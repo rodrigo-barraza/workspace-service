@@ -244,6 +244,11 @@ export class AgentClient {
       } else if (message.method === "agent.ping") {
         // Respond to application-level ping
         this._send({ jsonrpc: "2.0", method: "agent.pong", params: { agentId: this.agentId } });
+      } else if (message.method === "agent.kicked") {
+        // Server-initiated disconnect — suppress auto-reconnect
+        const kickReason = (message.params as Record<string, unknown>)?.reason || "unknown";
+        logger.warn(`Kicked by server: ${kickReason}`);
+        this.intentionalClose = true;
       }
       return;
     }
