@@ -372,6 +372,9 @@ html, body {
   white-space: pre-wrap;
   word-break: break-all;
   margin: 0;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 
 /* ── WSL Mode Toggle ────────────────────────────────────── */

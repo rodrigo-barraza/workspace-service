@@ -78,7 +78,15 @@ export class AgentProcess extends EventEmitter {
     // Translate paths: Windows → Linux-native
     const workspaceRoots = this.resolveWslRoots(configuration);
     const wslCorePath = windowsDrivePathToWslMountPath(AGENT_CORE_PATH);
-    const agentScriptPath = resolve(import.meta.dirname, "./agent-runner.mjs");
+
+    // The runner script lives inside Electron's app.asar when packaged.
+    // WSL/Linux can't read inside .asar archives — it's an opaque file to the
+    // native filesystem. electron-builder's asarUnpack extracts agent files to
+    // app.asar.unpacked/, so we swap the path segment for WSL access.
+    let agentScriptPath = resolve(import.meta.dirname, "./agent-runner.mjs");
+    if (app.isPackaged) {
+      agentScriptPath = agentScriptPath.replace("app.asar", "app.asar.unpacked");
+    }
     const wslRunnerPath = windowsDrivePathToWslMountPath(agentScriptPath);
 
     // Log all resolved paths and env values for diagnostics

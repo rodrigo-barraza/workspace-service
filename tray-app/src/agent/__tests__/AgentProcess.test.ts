@@ -9,11 +9,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Mock Electron ────────────────────────────────────────────
 
+const mockElectronApp = {
+  isPackaged: false,
+  getPath: () => "/tmp/test",
+};
+
 vi.mock("electron", () => ({
-  app: {
-    isPackaged: false,
-    getPath: () => "/tmp/test",
-  },
+  app: mockElectronApp,
 }));
 
 // ── Mock child_process ───────────────────────────────────────
@@ -44,7 +46,7 @@ function createMockChildProcess(withIpc: boolean): MockChildProcess {
   childProcess.kill = vi.fn();
   childProcess.pid = 12345;
   if (!withIpc) {
-    delete (childProcess as Record<string, unknown>).send;
+    delete (childProcess as unknown as Record<string, unknown>).send;
   }
   return childProcess;
 }
@@ -133,6 +135,7 @@ describe("AgentProcess", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     spawnedChildProcesses.length = 0;
+    mockElectronApp.isPackaged = false;
     const module = await import("../AgentProcess.js");
     AgentProcess = module.AgentProcess;
   });
@@ -275,6 +278,45 @@ describe("AgentProcess", () => {
       }));
       const spawnArguments = getLastSpawnArguments();
       expect(spawnArguments).toContain("AGENT_ROOTS=/mnt/c/Users/rodrigo/dev");
+    });
+  });
+
+  // ── Asar Path Resolution (WSL can't read inside .asar) ───────
+
+  describe("asar path resolution for WSL", () => {
+    it("should replace app.asar with app.asar.unpacked in runner path when packaged", () => {
+      mockElectronApp.isPackaged = true;
+      const agent = new AgentProcess();
+      const logs = collectLogs(agent);
+      agent.start(createWslConfiguration());
+
+      const runnerLogEntry = logs.find((entry) => entry.message.includes("[WSL] Runner script (WSL)"));
+      expect(runnerLogEntry).toBeDefined();
+      // In dev mode the path won't contain app.asar at all, but when packaged
+      // the code replaces app.asar → app.asar.unpacked before converting to WSL path
+      expect(runnerLogEntry!.message).not.toContain("/app.asar/");
+    });
+
+    it("should NOT modify runner path in dev mode (app.isPackaged = false)", () => {
+      mockElectronApp.isPackaged = false;
+      const agent = new AgentProcess();
+      const logs = collectLogs(agent);
+      agent.start(createWslConfiguration());
+
+      const runnerLogEntry = logs.find((entry) => entry.message.includes("[WSL] Runner script (WSL)"));
+      expect(runnerLogEntry).toBeDefined();
+      // Dev mode path shouldn't contain app.asar.unpacked
+      expect(runnerLogEntry!.message).not.toContain("app.asar.unpacked");
+    });
+
+    it("should NOT affect the native Windows fork path regardless of isPackaged", () => {
+      mockElectronApp.isPackaged = true;
+      const agent = new AgentProcess();
+      agent.start(createConfiguration());
+
+      // Native mode uses fork, not spawn — no asar path mangling needed
+      expect(mockFork).toHaveBeenCalledTimes(1);
+      expect(mockSpawn).not.toHaveBeenCalled();
     });
   });
 
@@ -425,5 +467,31 @@ describe("AgentProcess", () => {
       agent.start(createConfiguration());
       expect(agent.isRunning()).toBe(true);
     });
+  });
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Electron Builder Config Validation
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// WSL mode requires agent files to be extracted from app.asar.
+// If asarUnpack is removed from electron-builder.yml, WSL will
+// fail with MODULE_NOT_FOUND because Linux can't read .asar.
+
+import { readFileSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
+
+describe("electron-builder.yml (WSL regression guard)", () => {
+  const builderConfigPath = resolvePath(import.meta.dirname, "../../../electron-builder.yml");
+  const builderConfigContent = readFileSync(builderConfigPath, "utf-8");
+
+  it("should include asarUnpack for the agent directory", () => {
+    expect(builderConfigContent).toContain("asarUnpack:");
+    expect(builderConfigContent).toMatch(/out\/agent\/\*\*\/\*/);
+  });
+
+  it("should include workspace-agent-core.mjs as extraResources", () => {
+    expect(builderConfigContent).toContain("workspace-agent-core.mjs");
+    expect(builderConfigContent).toContain("extraResources:");
   });
 });

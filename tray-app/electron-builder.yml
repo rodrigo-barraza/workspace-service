@@ -13,6 +13,9 @@ files:
   - "!node_modules/**/*.d.ts"
   - "!node_modules/**/*.map"
 
+asarUnpack:
+  - "out/agent/**/*"
+
 extraResources:
   - from: "../standalone/workspace-agent-core.mjs"
     to: "workspace-agent-core.mjs"

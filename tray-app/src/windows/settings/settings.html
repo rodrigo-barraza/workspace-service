@@ -153,6 +153,9 @@
         button.classList.add("is-active-state");
         button.setAttribute("aria-selected", "true");
         document.getElementById(`tab-panel-${targetTab}`).classList.add("is-visible-state");
+
+        // Auto-load logs when switching to the Logs tab
+        if (targetTab === "logs") refreshLogOutput();
       });
     });
 
@@ -419,7 +422,7 @@
       }
     });
 
-    refreshLogsButton.addEventListener("click", async () => {
+    async function refreshLogOutput() {
       const logs = await window.prismAgent.getLogs();
       if (logs.length === 0) {
         logOutput.textContent = "No logs yet.";
@@ -434,7 +437,9 @@
       }).join("\n");
       const logViewerContainer = document.getElementById("log-viewer-container");
       logViewerContainer.scrollTop = logViewerContainer.scrollHeight;
-    });
+    }
+
+    refreshLogsButton.addEventListener("click", refreshLogOutput);
 
     setInterval(updateStatus, 5000);
     loadConfiguration();
