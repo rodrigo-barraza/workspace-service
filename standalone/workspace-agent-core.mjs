@@ -538,6 +538,7 @@ async function handleFilePatch(roots, { path: filePath, patch }) {
       for (let hunkLineIndex = patchIndex + 1; hunkLineIndex < patchLines.length; hunkLineIndex++) {
         const line = patchLines[hunkLineIndex];
         if (line.startsWith("@@") || (line.startsWith("diff ") && hunkLineIndex > patchIndex + 1)) break;
+        if (line.startsWith("\\")) continue;
         if (line.startsWith("-")) removals.push(hunkLineIndex);
         else if (line.startsWith("+")) additions.push(line.slice(1));
         else if (line.startsWith(" ") || line === "") contextCount++;
@@ -550,6 +551,7 @@ async function handleFilePatch(roots, { path: filePath, patch }) {
       for (let hunkLineIndex = patchIndex + 1; hunkLineIndex < patchLines.length; hunkLineIndex++) {
         const line = patchLines[hunkLineIndex];
         if (line.startsWith("@@") || (line.startsWith("diff ") && hunkLineIndex > patchIndex + 1)) break;
+        if (line.startsWith("\\")) continue;
         if (line.startsWith("+")) replacementBlock.push(line.slice(1));
         else if (line.startsWith("-")) { /* skip removed lines */ }
         else replacementBlock.push(resultLines[resultIndex] !== undefined ? resultLines[resultIndex] : line.slice(1));

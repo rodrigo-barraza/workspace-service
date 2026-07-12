@@ -25,6 +25,7 @@ import {
   BINARY_FILE_EXTENSIONS,
   PREVIEW_IMAGE_FILE_EXTENSIONS,
   globToRegex,
+  WORKSPACE_SKIP_DIRECTORIES,
 } from "@rodrigo-barraza/utilities-library";
 
 export class FileHandler {
@@ -558,19 +559,22 @@ export class FileHandler {
         const directoryEntries = await readdir(currentDirectory, { withFileTypes: true });
         const treeEntries: TreeEntry[] = [];
 
-        for (const entry of directoryEntries) {
-          const fullPath = resolve(currentDirectory, entry.name);
+        for (const directoryEntry of directoryEntries) {
+          if (WORKSPACE_SKIP_DIRECTORIES.has(directoryEntry.name)) continue;
+          if (directoryEntry.name.startsWith(".") && directoryEntry.name !== ".env.example") continue;
+
+          const fullPath = resolve(currentDirectory, directoryEntry.name);
 
           const pathValidation = this.validatePath(fullPath);
           if (!pathValidation.safe) continue;
 
-          if (entry.isDirectory()) {
+          if (directoryEntry.isDirectory()) {
             const children = currentDepth < maxDepth
               ? await buildTree(fullPath, currentDepth + 1)
               : [];
-            treeEntries.push({ name: entry.name, type: "directory", children });
+            treeEntries.push({ name: directoryEntry.name, type: "directory", children });
           } else {
-            treeEntries.push({ name: entry.name, type: "file" });
+            treeEntries.push({ name: directoryEntry.name, type: "file" });
           }
         }
 
