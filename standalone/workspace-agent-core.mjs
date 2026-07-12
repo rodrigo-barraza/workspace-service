@@ -499,7 +499,7 @@ async function handleCommandRun(roots, { command, cwd, timeout = COMMAND_DEFAULT
   return new Promise((resolvePromise) => {
     const stdoutChunks = []; const stderrChunks = [];
     let stdoutLen = 0, stderrLen = 0, timedOut = false, settled = false;
-    const shell = process.platform === "win32" ? "cmd" : "bash";
+    const shell = process.platform === "win32" ? "cmd" : "/usr/bin/bash";
     const shellArgs = process.platform === "win32" ? ["/c", command] : ["-l", "-c", command];
     const child = spawn(shell, shellArgs, { cwd: cwd || roots[0], stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, CI: "true", FORCE_COLOR: "0", NO_COLOR: "1" }, detached: false });
     child.stdin.end();
@@ -646,7 +646,7 @@ async function handleCommandStream(roots, { command, cwd, timeout = COMMAND_DEFA
   return new Promise((resolvePromise) => {
     const stdoutChunks = []; const stderrChunks = [];
     let stdoutLen = 0, stderrLen = 0, timedOut = false, settled = false;
-    const shell = process.platform === "win32" ? "cmd" : "bash";
+    const shell = process.platform === "win32" ? "cmd" : "/usr/bin/bash";
     const shellArgs = process.platform === "win32" ? ["/c", command] : ["-l", "-c", command];
     const child = spawn(shell, shellArgs, { cwd: cwd || roots[0], stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, CI: "true", FORCE_COLOR: "0", NO_COLOR: "1" }, detached: false });
     child.stdin.end();

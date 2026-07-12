@@ -60,7 +60,7 @@ export class CommandHandler {
       let timedOut = false;
       let settled = false;
 
-      const child = spawn("bash", ["-l", "-c", command], {
+      const child = spawn("/usr/bin/bash", ["-l", "-c", command], {
         cwd: cwd ? translatePath(cwd, this.roots) : this.roots[0],
         stdio: ["pipe", "pipe", "pipe"],
         env: {
@@ -148,7 +148,7 @@ export class CommandHandler {
       let timedOut = false;
       let settled = false;
 
-      const child = spawn("bash", ["-l", "-c", command], {
+      const child = spawn("/usr/bin/bash", ["-l", "-c", command], {
         cwd: cwd ? translatePath(cwd, this.roots) : this.roots[0],
         stdio: ["pipe", "pipe", "pipe"],
         env: {
