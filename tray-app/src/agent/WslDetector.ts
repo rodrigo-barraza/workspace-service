@@ -56,7 +56,7 @@ export async function checkNodeInDistro(distroName: string): Promise<string | nu
   try {
     const { stdout } = await execFileAsync(
       WSL_EXECUTABLE,
-      ["-d", distroName, "--", "bash", "-l", "-c", "node --version"],
+      ["-d", distroName, "--", "bash", "-lic", "node --version"],
       { timeout: NODE_CHECK_TIMEOUT_MILLISECONDS, windowsHide: true },
     );
 

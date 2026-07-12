@@ -81,16 +81,22 @@ export class AgentProcess extends EventEmitter {
     const agentScriptPath = resolve(import.meta.dirname, "./agent-runner.mjs");
     const wslRunnerPath = windowsDrivePathToWslMountPath(agentScriptPath);
 
-    this.childProcess = spawn("wsl.exe", [
-      "-d", distroName,
-      "--",
-      "env",
+    // Build the command as a single string for bash -lic so that
+    // .bashrc is fully sourced (nvm, conda, fnm PATH entries loaded)
+    const envPrefix = [
       `AGENT_BACKEND_URL=${backendUrl}`,
       `AGENT_SECRET=${configuration.secret}`,
       `AGENT_ROOTS=${workspaceRoots.join(",")}`,
       `AGENT_NAME=${configuration.agentName}`,
       `AGENT_CORE_PATH=${wslCorePath}`,
-      "node", wslRunnerPath,
+    ].map((variable) => `export ${variable}`).join("; ");
+
+    const bashCommand = `${envPrefix}; exec node ${wslRunnerPath}`;
+
+    this.childProcess = spawn("wsl.exe", [
+      "-d", distroName,
+      "--",
+      "bash", "-lic", bashCommand,
     ], {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
