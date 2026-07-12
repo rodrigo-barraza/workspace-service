@@ -81,22 +81,36 @@ export class AgentProcess extends EventEmitter {
     const agentScriptPath = resolve(import.meta.dirname, "./agent-runner.mjs");
     const wslRunnerPath = windowsDrivePathToWslMountPath(agentScriptPath);
 
-    // Build the command as a single string for bash -lic so that
-    // .bashrc is fully sourced (nvm, conda, fnm PATH entries loaded)
-    const envPrefix = [
-      `AGENT_BACKEND_URL=${backendUrl}`,
-      `AGENT_SECRET=${configuration.secret}`,
-      `AGENT_ROOTS=${workspaceRoots.join(",")}`,
-      `AGENT_NAME=${configuration.agentName}`,
-      `AGENT_CORE_PATH=${wslCorePath}`,
-    ].map((variable) => `export ${variable}`).join("; ");
+    // Shell-escape a value by wrapping in single quotes.
+    // The only character that needs escaping inside single quotes
+    // is the single quote itself, using the '\'' idiom.
+    const shellEscape = (value: string): string =>
+      "'" + value.replace(/'/g, "'\\''") + "'";
 
-    const bashCommand = `${envPrefix}; exec node ${wslRunnerPath}`;
+    // Build env exports with properly escaped values
+    const envExports = [
+      ["AGENT_BACKEND_URL", backendUrl],
+      ["AGENT_SECRET", configuration.secret],
+      ["AGENT_ROOTS", workspaceRoots.join(",")],
+      ["AGENT_NAME", configuration.agentName],
+      ["AGENT_CORE_PATH", wslCorePath],
+    ].map(([key, value]) => `export ${key}=${shellEscape(value)}`).join("; ");
+
+    // Source Node version managers (nvm/fnm) explicitly in a non-interactive
+    // login shell. Using -lc (not -lic) avoids history expansion issues with
+    // special characters like ! in env values, and avoids job control noise.
+    const nodeManagerInit = [
+      'export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"',
+      '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"',
+      '[ -s "$HOME/.fnm/fnm" ] && eval "$($HOME/.fnm/fnm env)"',
+    ].join("; ");
+
+    const bashCommand = `${envExports}; ${nodeManagerInit}; exec node ${shellEscape(wslRunnerPath)}`;
 
     this.childProcess = spawn("wsl.exe", [
       "-d", distroName,
       "--",
-      "bash", "-lic", bashCommand,
+      "bash", "-lc", bashCommand,
     ], {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,

@@ -51,12 +51,23 @@ export async function isWslAvailable(): Promise<boolean> {
 /**
  * Verify that Node.js is available inside a specific WSL distro.
  * Returns the Node version string on success, or null if unavailable.
+ *
+ * Uses bash -lc (non-interactive login shell) and explicitly sources
+ * common Node version managers (nvm, fnm) to ensure Node is on PATH
+ * even when .bashrc's non-interactive guard skips their initialization.
  */
 export async function checkNodeInDistro(distroName: string): Promise<string | null> {
+  const nodeManagerInit = [
+    'export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"',
+    '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"',
+    '[ -s "$HOME/.fnm/fnm" ] && eval "$($HOME/.fnm/fnm env)"',
+    "node --version",
+  ].join("; ");
+
   try {
     const { stdout } = await execFileAsync(
       WSL_EXECUTABLE,
-      ["-d", distroName, "--", "bash", "-lic", "node --version"],
+      ["-d", distroName, "--", "bash", "-lc", nodeManagerInit],
       { timeout: NODE_CHECK_TIMEOUT_MILLISECONDS, windowsHide: true },
     );
 
