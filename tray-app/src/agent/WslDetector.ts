@@ -1,6 +1,40 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // WSL2 Detection & Path Translation Utilities
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// ┌─────────────────────────────────────────────────────────────┐
+// │ CRITICAL: WSL Shell Initialization Behavior                 │
+// │                                                             │
+// │ When `wsl.exe` runs a command inside a distro, it does NOT  │
+// │ source .bashrc or .profile by default. Node.js installs     │
+// │ managed by nvm, fnm, or conda only appear on PATH after     │
+// │ shell initialization scripts run. Ubuntu's .bashrc also has │
+// │ a non-interactive guard:                                    │
+// │                                                             │
+// │   case $- in                                                │
+// │       *i*) ;;                                               │
+// │         *) return;;                                         │
+// │   esac                                                      │
+// │                                                             │
+// │ This means:                                                 │
+// │   ✗ wsl.exe -- node --version          → NOT FOUND          │
+// │   ✗ wsl.exe -- bash -lc "node -v"      → NOT FOUND          │
+// │     (.bashrc guard skips nvm init for non-interactive bash)  │
+// │   ✗ wsl.exe -- bash -lc ". ~/.nvm/nvm.sh; node -v"          │
+// │     (wsl.exe argument passing corrupts complex commands)     │
+// │   ✓ wsl.exe -- bash -lic "node -v"     → WORKS              │
+// │     (-i forces interactive, bypassing the guard)             │
+// │                                                             │
+// │ For spawning processes with env vars, use `env` to pass     │
+// │ values as raw argv (no shell escaping needed), then wrap    │
+// │ only the node command in `bash -lic`:                       │
+// │                                                             │
+// │   wsl.exe -- env KEY=VALUE bash -lic "exec node script.mjs" │
+// │                                                             │
+// │ DO NOT attempt bash -lc with explicit nvm sourcing — it     │
+// │ fails due to wsl.exe argument passing mangling quotes and   │
+// │ dollar signs in multi-part command strings.                 │
+// └─────────────────────────────────────────────────────────────┘
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -52,22 +86,16 @@ export async function isWslAvailable(): Promise<boolean> {
  * Verify that Node.js is available inside a specific WSL distro.
  * Returns the Node version string on success, or null if unavailable.
  *
- * Uses bash -lc (non-interactive login shell) and explicitly sources
- * common Node version managers (nvm, fnm) to ensure Node is on PATH
- * even when .bashrc's non-interactive guard skips their initialization.
+ * Uses bash -lic (interactive login shell) so that .bashrc is fully
+ * sourced, including nvm/fnm/conda initialization that loads Node
+ * onto PATH. The -i flag is needed because Ubuntu's .bashrc has a
+ * non-interactive guard that skips initialization otherwise.
  */
 export async function checkNodeInDistro(distroName: string): Promise<string | null> {
-  const nodeManagerInit = [
-    'export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"',
-    '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"',
-    '[ -s "$HOME/.fnm/fnm" ] && eval "$($HOME/.fnm/fnm env)"',
-    "node --version",
-  ].join("; ");
-
   try {
     const { stdout } = await execFileAsync(
       WSL_EXECUTABLE,
-      ["-d", distroName, "--", "bash", "-lc", nodeManagerInit],
+      ["-d", distroName, "--", "bash", "-lic", "node --version"],
       { timeout: NODE_CHECK_TIMEOUT_MILLISECONDS, windowsHide: true },
     );
 
