@@ -18,7 +18,7 @@ program
     "-w, --workspace <paths...>",
     "Local directory root(s) to expose (or set WORKSPACE_ROOTS env var, comma-separated)",
   )
-  .option("-s, --secret <secret>", "API secret for authentication (or set WORKSPACE_SERVICE_SECRET env var)")
+  .option("-s, --secret <secret>", "API secret for authentication")
   .option("-n, --name <name>", "Human-readable name for this agent", hostname())
   .option("-r, --reconnect-interval <ms>", "Base reconnect delay in ms", "5000")
   .option("-p, --health-port <port>", "Health endpoint port", "5605")
@@ -74,7 +74,30 @@ if (!backendUrl.includes("/ws/agent")) {
   backendUrl = backendUrl.replace(/\/+$/, "") + "/ws/agent";
 }
 
-const secret = cliOptions.secret || process.env.WORKSPACE_SERVICE_SECRET || "";
+// Resolve auth secret: Settings page (MongoDB) → CLI flag → env var
+let secret = cliOptions.secret || "";
+try {
+  const { getDatabase } = await import("@rodrigo-barraza/utilities-library/mongo");
+  const database = getDatabase();
+  const databaseInternal = database as unknown as {
+    client?: { db: (name: string) => unknown };
+    s?: { client?: { db: (name: string) => unknown } };
+  };
+  const mongoClient = databaseInternal.client || databaseInternal.s?.client;
+  if (mongoClient) {
+    const prismDatabase = mongoClient.db("prism") as { collection: (name: string) => { findOne: (query: Record<string, unknown>) => Promise<Record<string, unknown> | null> } };
+    const settingsDocument = await prismDatabase
+      .collection("settings")
+      .findOne({ _key: "global" });
+    const settingsData = (settingsDocument?.data ?? {}) as Record<string, Record<string, unknown>>;
+    const workspaceSecret = settingsData?.workspace?.agentSecret;
+    if (workspaceSecret && typeof workspaceSecret === "string" && workspaceSecret.trim()) {
+      secret = workspaceSecret.trim();
+    }
+  }
+} catch {
+  // DB unavailable — use CLI/env fallback
+}
 const reconnectInterval = parseInt(cliOptions.reconnectInterval, 10) || 5000;
 const healthPort = parseInt(cliOptions.healthPort, 10) || 5605;
 
