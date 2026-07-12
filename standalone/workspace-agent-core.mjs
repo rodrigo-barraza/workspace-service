@@ -14,7 +14,7 @@
 
 import { readFile, writeFile, stat, readdir, mkdir, rename, unlink } from "node:fs/promises";
 import { resolve, relative, extname, dirname, basename } from "node:path";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, statSync, watch } from "node:fs";
 import { hostname, platform, arch, release, userInfo, cpus, totalmem } from "node:os";
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
@@ -517,6 +517,128 @@ async function handleCommandRun(roots, { command, cwd, timeout = COMMAND_DEFAULT
   });
 }
 
+async function handleFilePatch(roots, { path: filePath, patch }) {
+  const validation = validatePath(filePath, roots);
+  if (!validation.safe) return { error: validation.error };
+  if (!patch || typeof patch !== "string") return { error: "'patch' is required and must be a string (unified diff format)" };
+  const resolved = validation.resolved;
+  try {
+    const content = await readFile(resolved, "utf-8");
+    const lines = content.split("\n");
+    const hunkPattern = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
+    const patchLines = patch.split("\n");
+    let resultLines = [...lines];
+    let offset = 0;
+    for (let patchIndex = 0; patchIndex < patchLines.length; patchIndex++) {
+      const hunkMatch = patchLines[patchIndex].match(hunkPattern);
+      if (!hunkMatch) continue;
+      const originalStart = parseInt(hunkMatch[1], 10) - 1;
+      const removals = []; const additions = [];
+      let contextCount = 0;
+      for (let hunkLineIndex = patchIndex + 1; hunkLineIndex < patchLines.length; hunkLineIndex++) {
+        const line = patchLines[hunkLineIndex];
+        if (line.startsWith("@@") || (line.startsWith("diff ") && hunkLineIndex > patchIndex + 1)) break;
+        if (line.startsWith("-")) removals.push(hunkLineIndex);
+        else if (line.startsWith("+")) additions.push(line.slice(1));
+        else if (line.startsWith(" ") || line === "") contextCount++;
+      }
+      const deleteStart = originalStart + offset;
+      const deleteCount = removals.length + contextCount;
+      // Build replacement: context lines (kept) + additions
+      const replacementBlock = [];
+      let resultIndex = deleteStart;
+      for (let hunkLineIndex = patchIndex + 1; hunkLineIndex < patchLines.length; hunkLineIndex++) {
+        const line = patchLines[hunkLineIndex];
+        if (line.startsWith("@@") || (line.startsWith("diff ") && hunkLineIndex > patchIndex + 1)) break;
+        if (line.startsWith("+")) replacementBlock.push(line.slice(1));
+        else if (line.startsWith("-")) { /* skip removed lines */ }
+        else replacementBlock.push(resultLines[resultIndex] !== undefined ? resultLines[resultIndex] : line.slice(1));
+        if (!line.startsWith("+")) resultIndex++;
+      }
+      resultLines.splice(deleteStart, deleteCount, ...replacementBlock);
+      offset += replacementBlock.length - deleteCount;
+    }
+    const patched = resultLines.join("\n");
+    await writeFile(resolved, patched, "utf-8");
+    const oldLines = lines.length;
+    const newLines = resultLines.length;
+    return { filePath: resolved, success: true, oldLines, newLines, lineDelta: newLines - oldLines };
+  } catch (error) {
+    if (error.code === "ENOENT") return { error: `File not found: ${resolved}` };
+    return { error: `patch_file failed: ${error.message}` };
+  }
+}
+
+async function handleFileDiff(roots, { pathA, pathB, content, contextLines = 3 }) {
+  if (!pathA) return { error: "'pathA' is required" };
+  if (!pathB && content === undefined) return { error: "Either 'pathB' or 'content' must be provided" };
+  const validA = validatePath(pathA, roots);
+  if (!validA.safe) return { error: validA.error };
+  try {
+    const contentA = await readFile(validA.resolved, "utf-8");
+    let contentB, labelB;
+    if (pathB) {
+      const validB = validatePath(pathB, roots);
+      if (!validB.safe) return { error: validB.error };
+      contentB = await readFile(validB.resolved, "utf-8");
+      labelB = validB.resolved;
+    } else {
+      contentB = content;
+      labelB = "(provided content)";
+    }
+    const linesA = contentA.split("\n");
+    const linesB = contentB.split("\n");
+    // Simple line-by-line diff — build unified diff output
+    const clampedContext = Math.min(contextLines, 10);
+    const diffLines = [`--- ${validA.resolved}`, `+++ ${labelB}`];
+    let additions = 0, deletions = 0;
+    // Find changed regions
+    const maxLength = Math.max(linesA.length, linesB.length);
+    let hunkStart = -1;
+    const hunks = [];
+    for (let lineIndex = 0; lineIndex <= maxLength; lineIndex++) {
+      const lineA = lineIndex < linesA.length ? linesA[lineIndex] : undefined;
+      const lineB = lineIndex < linesB.length ? linesB[lineIndex] : undefined;
+      if (lineA !== lineB) {
+        if (hunkStart === -1) hunkStart = lineIndex;
+      } else {
+        if (hunkStart !== -1) {
+          hunks.push({ start: hunkStart, end: lineIndex });
+          hunkStart = -1;
+        }
+      }
+    }
+    if (hunkStart !== -1) hunks.push({ start: hunkStart, end: maxLength });
+    for (const hunk of hunks) {
+      const contextStart = Math.max(0, hunk.start - clampedContext);
+      const contextEnd = Math.min(maxLength, hunk.end + clampedContext);
+      const aStart = contextStart + 1;
+      const aCount = Math.min(linesA.length, contextEnd) - contextStart;
+      const bStart = contextStart + 1;
+      const bCount = Math.min(linesB.length, contextEnd) - contextStart;
+      diffLines.push(`@@ -${aStart},${aCount} +${bStart},${bCount} @@`);
+      for (let lineIndex = contextStart; lineIndex < contextEnd; lineIndex++) {
+        const lineA = lineIndex < linesA.length ? linesA[lineIndex] : undefined;
+        const lineB = lineIndex < linesB.length ? linesB[lineIndex] : undefined;
+        if (lineIndex < hunk.start || lineIndex >= hunk.end) {
+          if (lineA !== undefined) diffLines.push(" " + lineA);
+        } else {
+          if (lineA !== undefined) { diffLines.push("-" + lineA); deletions++; }
+          if (lineB !== undefined) { diffLines.push("+" + lineB); additions++; }
+        }
+      }
+    }
+    const hasChanges = hunks.length > 0;
+    return {
+      pathA: validA.resolved, pathB: labelB, hasChanges, additions, deletions,
+      diff: hasChanges ? diffLines.join("\n") : "(files are identical)",
+    };
+  } catch (error) {
+    if (error.code === "ENOENT") return { error: `File not found: ${error.path || pathA}` };
+    return { error: `file_diff failed: ${error.message}` };
+  }
+}
+
 async function handleCommandStream(roots, { command, cwd, timeout = COMMAND_DEFAULT_TIMEOUT_MS }, notify) {
   const clampedTimeout = Math.min(Math.max(timeout, 1000), COMMAND_MAX_TIMEOUT_MS);
   if (!command || typeof command !== "string") return { success: false, stdout: "", stderr: "", exitCode: null, executionTimeMs: 0, error: "Command is required" };
@@ -640,12 +762,15 @@ export class WorkspaceAgent extends EventEmitter {
     this.isIntentionalClose = false;
     this.reconnectAttempts = 0;
     this.heartbeatTimer = null;
+    this.watchers = new Map();
 
     this.methodMap = new Map([
       ["file.read", (parameters) => handleReadFile(roots, parameters)],
       ["file.write", (parameters) => handleWriteFile(roots, parameters)],
       ["file.strReplace", (parameters) => handleStrReplace(roots, parameters)],
+      ["file.patch", (parameters) => handleFilePatch(roots, parameters)],
       ["file.info", (parameters) => handleFileInfo(roots, parameters)],
+      ["file.diff", (parameters) => handleFileDiff(roots, parameters)],
       ["file.move", (parameters) => handleMoveFile(roots, parameters)],
       ["file.delete", (parameters) => handleDeleteFile(roots, parameters)],
       ["file.readMulti", (parameters) => handleMultiFileRead(roots, parameters)],
@@ -660,6 +785,8 @@ export class WorkspaceAgent extends EventEmitter {
       ["command.stream", (parameters) => handleCommandStream(roots, parameters, (event, data) => this._sendNotification(event, data))],
       ["directory.tree", (parameters) => handleDirectoryTree(roots, parameters)],
       ["project.summary", (parameters) => handleProjectSummary(roots, parameters)],
+      ["watch.subscribe", (parameters) => this._watchPath(parameters)],
+      ["watch.unsubscribe", (parameters) => this._unwatchPath(parameters)],
     ]);
   }
 
@@ -714,6 +841,7 @@ export class WorkspaceAgent extends EventEmitter {
   disconnect() {
     this.isIntentionalClose = true;
     this._stopHeartbeat();
+    this._unwatchAll();
     if (this.webSocket && this.isConnected) {
       this._send({ jsonrpc: "2.0", method: "agent.deregister", params: { agentId: this.agentId } });
       this.webSocket.close(1000, "Agent shutting down");
@@ -792,6 +920,54 @@ export class WorkspaceAgent extends EventEmitter {
     if (error) message.error = error;
     else message.result = result;
     this._send(message);
+  }
+
+  _watchPath({ path: watchPath, recursive = true }) {
+    const logger = getLogger();
+    if (!watchPath) return { error: "path is required" };
+    const resolved = resolve(watchPath);
+    if (this.watchers.has(resolved)) return { watching: true, path: resolved, message: "Already watching" };
+    try {
+      const watcher = watch(resolved, { recursive }, (eventType, filename) => {
+        const entry = this.watchers.get(resolved);
+        if (!entry) return;
+        if (entry.debounceTimer) clearTimeout(entry.debounceTimer);
+        entry.debounceTimer = setTimeout(() => {
+          entry.debounceTimer = null;
+          this._sendNotification("watch.changed", { watchRoot: resolved, eventType, filename: filename || null });
+        }, 300);
+      });
+      watcher.on("error", (watchError) => {
+        logger.warn(`Watcher error on ${resolved}: ${watchError.message}`);
+        this._unwatchPath({ path: resolved });
+      });
+      this.watchers.set(resolved, { watcher, debounceTimer: null });
+      logger.info(`Watching: ${resolved} (recursive=${recursive})`);
+      return { watching: true, path: resolved };
+    } catch (error) {
+      return { error: `Failed to watch ${resolved}: ${error.message}` };
+    }
+  }
+
+  _unwatchPath({ path: watchPath }) {
+    const logger = getLogger();
+    if (!watchPath) return { error: "path is required" };
+    const resolved = resolve(watchPath);
+    const entry = this.watchers.get(resolved);
+    if (!entry) return { watching: false, path: resolved, message: "Not watching" };
+    if (entry.debounceTimer) clearTimeout(entry.debounceTimer);
+    entry.watcher.close();
+    this.watchers.delete(resolved);
+    logger.info(`Unwatched: ${resolved}`);
+    return { watching: false, path: resolved };
+  }
+
+  _unwatchAll() {
+    for (const [watchedPath, entry] of this.watchers) {
+      if (entry.debounceTimer) clearTimeout(entry.debounceTimer);
+      entry.watcher.close();
+    }
+    this.watchers.clear();
   }
 
   _sendNotification(method, params) {
