@@ -74,19 +74,14 @@ if (!backendUrl.includes("/ws/agent")) {
   backendUrl = backendUrl.replace(/\/+$/, "") + "/ws/agent";
 }
 
-// Resolve auth secret: Settings page (MongoDB) → CLI flag → env var
+// Resolve auth secret: Settings page (MongoDB) → CLI flag
 let secret = cliOptions.secret || "";
 try {
-  const { getDatabase } = await import("@rodrigo-barraza/utilities-library/mongo");
-  const database = getDatabase();
-  const databaseInternal = database as unknown as {
-    client?: { db: (name: string) => unknown };
-    s?: { client?: { db: (name: string) => unknown } };
-  };
-  const mongoClient = databaseInternal.client || databaseInternal.s?.client;
-  if (mongoClient) {
-    const prismDatabase = mongoClient.db("prism") as { collection: (name: string) => { findOne: (query: Record<string, unknown>) => Promise<Record<string, unknown> | null> } };
-    const settingsDocument = await prismDatabase
+  const { connectDatabase, disconnectDatabase } = await import("@rodrigo-barraza/utilities-library/mongo");
+  const mongoUri = process.env.MONGO_URI;
+  if (mongoUri) {
+    const database = await connectDatabase(mongoUri, "prism");
+    const settingsDocument = await database
       .collection("settings")
       .findOne({ _key: "global" });
     const settingsData = (settingsDocument?.data ?? {}) as Record<string, Record<string, unknown>>;
@@ -94,9 +89,10 @@ try {
     if (workspaceSecret && typeof workspaceSecret === "string" && workspaceSecret.trim()) {
       secret = workspaceSecret.trim();
     }
+    await disconnectDatabase();
   }
 } catch {
-  // DB unavailable — use CLI/env fallback
+  // DB unavailable — connect without auth
 }
 const reconnectInterval = parseInt(cliOptions.reconnectInterval, 10) || 5000;
 const healthPort = parseInt(cliOptions.healthPort, 10) || 5605;
