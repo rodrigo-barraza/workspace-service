@@ -154,9 +154,6 @@ export class AgentClient extends EventEmitter {
         }
       });
 
-      this.ws.on("pong", () => {
-        if (this.heartbeatTimeout) clearTimeout(this.heartbeatTimeout);
-      });
 
       this.ws.on("close", (code: number, reason: Buffer) => {
         this.connected = false;
@@ -232,7 +229,7 @@ export class AgentClient extends EventEmitter {
         name: this.name,
         roots: this.virtualRoots,
         capabilities: ["file", "git", "command", "project"],
-        hostInfo: {
+        machineInfo: {
           hostname: os.hostname(),
           platform: os.platform(),
           arch: os.arch(),
@@ -257,7 +254,8 @@ export class AgentClient extends EventEmitter {
       if (message.method === "agent.registered") {
         logger.success(`Server confirmed registration`);
       } else if (message.method === "agent.ping") {
-        // Respond to application-level ping
+        // Respond to application-level ping + treat as heartbeat proof-of-liveness
+        if (this.heartbeatTimeout) clearTimeout(this.heartbeatTimeout);
         this._send({ jsonrpc: "2.0", method: "agent.pong", params: { agentId: this.agentId } });
       } else if (message.method === "agent.kicked") {
         // Server-initiated disconnect — suppress auto-reconnect
@@ -339,7 +337,9 @@ export class AgentClient extends EventEmitter {
     this._stopHeartbeat();
     this.heartbeatTimer = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
-        this.ws.ping();
+        // Use application-level JSON heartbeat instead of WebSocket control frames,
+        // because reverse proxies (Cloudflare, nginx) absorb WS-level ping/pong.
+        this._send({ jsonrpc: "2.0", method: "agent.heartbeat", params: { agentId: this.agentId } });
         this.heartbeatTimeout = setTimeout(() => {
           logger.warn("Heartbeat timeout — closing connection");
           this.ws?.terminate();

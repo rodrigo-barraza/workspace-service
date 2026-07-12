@@ -32,6 +32,7 @@ type MockChildProcess = EventEmitter & {
   stdin: PassThrough;
   send: ReturnType<typeof vi.fn>;
   kill: ReturnType<typeof vi.fn>;
+  connected: boolean;
   pid: number;
 };
 
@@ -44,9 +45,11 @@ function createMockChildProcess(withIpc: boolean): MockChildProcess {
   childProcess.stdin = new PassThrough();
   childProcess.send = vi.fn();
   childProcess.kill = vi.fn();
+  childProcess.connected = true;
   childProcess.pid = 12345;
   if (!withIpc) {
     delete (childProcess as unknown as Record<string, unknown>).send;
+    delete (childProcess as unknown as Record<string, unknown>).connected;
   }
   return childProcess;
 }
@@ -180,10 +183,10 @@ describe("AgentProcess", () => {
 
     it("should pass all env vars to the forked process", () => {
       const agent = new AgentProcess();
-      agent.start(createConfiguration({ secret: "my-secret", agentName: "Test Host" }));
+      agent.start(createConfiguration({ secret: "my-secret", agentName: "Test Machine" }));
       const environment = getLastForkEnv();
       expect(environment.AGENT_SECRET).toBe("my-secret");
-      expect(environment.AGENT_NAME).toBe("Test Host");
+      expect(environment.AGENT_NAME).toBe("Test Machine");
       expect(environment.AGENT_ROOTS).toBe("C:\\Users\\test\\dev");
       expect(environment.AGENT_CORE_PATH).toBeDefined();
     });
@@ -466,6 +469,95 @@ describe("AgentProcess", () => {
       const agent = new AgentProcess();
       agent.start(createConfiguration());
       expect(agent.isRunning()).toBe(true);
+    });
+
+    // ── EPIPE Regression Tests ──────────────────────────────────
+
+    it("should NOT throw EPIPE when IPC channel is already closed on stop (native mode)", () => {
+      const agent = new AgentProcess();
+      agent.start(createConfiguration());
+
+      const childProcess = getLastChildProcess();
+      // Simulate the IPC channel being already closed
+      childProcess.connected = false;
+
+      // Must not throw — the guard clause prevents the send() call
+      expect(() => agent.stop()).not.toThrow();
+      expect(childProcess.send).not.toHaveBeenCalled();
+      expect(agent.getStatus().connectionStatus).toBe("disconnected");
+    });
+
+    it("should NOT throw even if send() throws despite connected=true (race condition fallback)", () => {
+      const agent = new AgentProcess();
+      agent.start(createConfiguration());
+
+      const childProcess = getLastChildProcess();
+      // connected=true but send() throws (theoretical race condition)
+      childProcess.connected = true;
+      childProcess.send = vi.fn(() => {
+        const error = new Error("write EPIPE");
+        (error as NodeJS.ErrnoException).code = "EPIPE";
+        throw error;
+      });
+
+      // The try/catch fallback should swallow the error
+      expect(() => agent.stop()).not.toThrow();
+      expect(agent.getStatus().connectionStatus).toBe("disconnected");
+    });
+
+    it("should NOT throw when stdin is not writable in WSL mode on stop", () => {
+      const agent = new AgentProcess();
+      agent.start(createWslConfiguration());
+
+      const childProcess = getLastChildProcess();
+      // Simulate stdin already destroyed
+      (childProcess.stdin as unknown as Record<string, unknown>).writable = false;
+
+      expect(() => agent.stop()).not.toThrow();
+      expect(agent.getStatus().connectionStatus).toBe("disconnected");
+    });
+
+    it("should NOT throw even if stdin.write throws despite writable=true (race condition fallback)", () => {
+      const agent = new AgentProcess();
+      agent.start(createWslConfiguration());
+
+      const childProcess = getLastChildProcess();
+      // writable=true but write() throws
+      (childProcess.stdin as unknown as Record<string, unknown>).writable = true;
+      childProcess.stdin.write = vi.fn(() => {
+        throw new Error("write EPIPE");
+      });
+
+      expect(() => agent.stop()).not.toThrow();
+      expect(agent.getStatus().connectionStatus).toBe("disconnected");
+    });
+
+    it("should stop existing process when start() is called while running", () => {
+      const agent = new AgentProcess();
+      agent.start(createConfiguration());
+
+      const firstChildProcess = getLastChildProcess();
+      // Make send() throw to simulate EPIPE during stop-before-restart
+      firstChildProcess.send = vi.fn(() => {
+        throw new Error("channel closed");
+      });
+
+      // Second start() should call stop() on the first process, then start a new one
+      expect(() => agent.start(createConfiguration())).not.toThrow();
+      expect(spawnedChildProcesses.length).toBe(2);
+    });
+
+    it("should write shutdown JSON to stdin in WSL mode", () => {
+      const agent = new AgentProcess();
+      agent.start(createWslConfiguration());
+
+      const childProcess = getLastChildProcess();
+      const writeSpy = vi.spyOn(childProcess.stdin, "write");
+      agent.stop();
+
+      expect(writeSpy).toHaveBeenCalledWith(
+        JSON.stringify({ type: "shutdown" }) + "\n",
+      );
     });
   });
 });

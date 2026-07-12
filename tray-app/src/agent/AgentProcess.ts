@@ -205,13 +205,21 @@ export class AgentProcess extends EventEmitter {
       if (isWslMode) {
         // Stdio mode: send shutdown JSON to stdin
         try {
-          this.childProcess.stdin?.write(JSON.stringify({ type: "shutdown" }) + "\n");
+          if (this.childProcess.stdin?.writable) {
+            this.childProcess.stdin.write(JSON.stringify({ type: "shutdown" }) + "\n");
+          }
         } catch {
           // stdin may already be closed
         }
       } else {
         // IPC mode: send via process.send()
-        this.childProcess.send({ type: "shutdown" });
+        try {
+          if (this.childProcess.connected) {
+            this.childProcess.send({ type: "shutdown" });
+          }
+        } catch {
+          // IPC channel may already be closed
+        }
       }
 
       const killTimeout = setTimeout(() => {
