@@ -517,6 +517,70 @@ async function handleCommandRun(roots, { command, cwd, timeout = COMMAND_DEFAULT
   });
 }
 
+async function handleCommandStream(roots, { command, cwd, timeout = COMMAND_DEFAULT_TIMEOUT_MS }, notify) {
+  const clampedTimeout = Math.min(Math.max(timeout, 1000), COMMAND_MAX_TIMEOUT_MS);
+  if (!command || typeof command !== "string") return { success: false, stdout: "", stderr: "", exitCode: null, executionTimeMs: 0, error: "Command is required" };
+  const startTime = performance.now();
+  return new Promise((resolvePromise) => {
+    const stdoutChunks = []; const stderrChunks = [];
+    let stdoutLen = 0, stderrLen = 0, timedOut = false, settled = false;
+    const shell = process.platform === "win32" ? "cmd" : "bash";
+    const shellArgs = process.platform === "win32" ? ["/c", command] : ["-l", "-c", command];
+    const child = spawn(shell, shellArgs, { cwd: cwd || roots[0], stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, CI: "true", FORCE_COLOR: "0", NO_COLOR: "1" }, detached: false });
+    child.stdin.end();
+    child.stdout.on("data", (chunk) => {
+      if (stdoutLen < MAX_OUTPUT_BYTES) {
+        stdoutChunks.push(chunk); stdoutLen += chunk.length;
+        notify?.("command.stdout", { data: chunk.toString("utf-8") });
+      }
+    });
+    child.stderr.on("data", (chunk) => {
+      if (stderrLen < MAX_OUTPUT_BYTES) {
+        stderrChunks.push(chunk); stderrLen += chunk.length;
+        notify?.("command.stderr", { data: chunk.toString("utf-8") });
+      }
+    });
+    const timer = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, clampedTimeout);
+    function finish(exitCode) {
+      if (settled) return; settled = true; clearTimeout(timer);
+      const stdout = Buffer.concat(stdoutChunks).toString("utf-8");
+      const stderr = Buffer.concat(stderrChunks).toString("utf-8");
+      resolvePromise({ success: exitCode === 0 && !timedOut, stdout: stdoutLen > MAX_OUTPUT_BYTES ? stdout + "\n... [truncated]" : stdout, stderr: stderrLen > MAX_OUTPUT_BYTES ? stderr + "\n... [truncated]" : stderr, exitCode: timedOut ? null : exitCode, executionTimeMs: Math.round(performance.now() - startTime), timedOut, ...(timedOut && { error: `Command timed out after ${clampedTimeout}ms` }) });
+    }
+    child.on("close", (code) => finish(code));
+    child.on("error", (processError) => { if (!settled) { settled = true; clearTimeout(timer); resolvePromise({ success: false, stdout: "", stderr: "", exitCode: null, executionTimeMs: Math.round(performance.now() - startTime), error: `Process error: ${processError.message}` }); } });
+  });
+}
+
+async function handleDirectoryTree(roots, { path: dirPath, maxDepth = 2 }) {
+  const validation = validatePath(dirPath, roots);
+  if (!validation.safe) return { error: validation.error };
+  const resolved = validation.resolved;
+  try {
+    const directoryStats = await stat(resolved);
+    if (!directoryStats.isDirectory()) return { error: `'${resolved}' is a file, not a directory.` };
+    const buildTree = async (currentDirectory, currentDepth) => {
+      if (currentDepth > maxDepth) return [];
+      const directoryEntries = await readdir(currentDirectory, { withFileTypes: true });
+      const treeEntries = [];
+      for (const entry of directoryEntries) {
+        const fullPath = resolve(currentDirectory, entry.name);
+        if (SKIP_DIRS.has(entry.name)) continue;
+        if (entry.name.startsWith(".") && entry.name !== ".env.example") continue;
+        if (entry.isDirectory()) {
+          const children = currentDepth < maxDepth ? await buildTree(fullPath, currentDepth + 1) : [];
+          treeEntries.push({ name: entry.name, type: "directory", children });
+        } else {
+          treeEntries.push({ name: entry.name, type: "file" });
+        }
+      }
+      return treeEntries;
+    };
+    const entries = await buildTree(resolved, 1);
+    return { entries };
+  } catch (error) { return { error: `Directory tree fetch failed: ${error.message}` }; }
+}
+
 // ────────────────────────────────────────────────────────────
 // Project Handler
 // ────────────────────────────────────────────────────────────
@@ -593,6 +657,8 @@ export class WorkspaceAgent extends EventEmitter {
       ["git.diff", (parameters) => handleGitDiff(roots, parameters)],
       ["git.log", (parameters) => handleGitLog(roots, parameters)],
       ["command.run", (parameters) => handleCommandRun(roots, parameters)],
+      ["command.stream", (parameters) => handleCommandStream(roots, parameters, (event, data) => this._sendNotification(event, data))],
+      ["directory.tree", (parameters) => handleDirectoryTree(roots, parameters)],
       ["project.summary", (parameters) => handleProjectSummary(roots, parameters)],
     ]);
   }
@@ -726,6 +792,10 @@ export class WorkspaceAgent extends EventEmitter {
     if (error) message.error = error;
     else message.result = result;
     this._send(message);
+  }
+
+  _sendNotification(method, params) {
+    this._send({ jsonrpc: "2.0", method, params });
   }
 
   _startHeartbeat() {

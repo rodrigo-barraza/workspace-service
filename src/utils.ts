@@ -195,7 +195,14 @@ export function validateWorkspacePath(inputPath: string, roots: string[]): PathV
   if (!inputPath || typeof inputPath !== "string") {
     return { safe: false, resolved: "", error: "Path is required" };
   }
-  const translated = translatePath(inputPath, roots);
+  // Sanitize LLM-generated paths: strip surrounding quotes and whitespace.
+  // Models sometimes send path values like `"."` or `'./src'` with literal
+  // quote characters embedded in the string, producing invalid filesystem paths.
+  const sanitizedPath = inputPath.trim().replace(/^["']+|["']+$/g, "").trim();
+  if (!sanitizedPath) {
+    return { safe: false, resolved: "", error: "Path is required" };
+  }
+  const translated = translatePath(sanitizedPath, roots);
   const resolved = translated.startsWith("/")
     ? resolve(translated)
     : resolve(roots[0], translated);
