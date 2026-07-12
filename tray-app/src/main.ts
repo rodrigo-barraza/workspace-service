@@ -59,8 +59,11 @@ function registerIpcHandlers(): void {
     return agentProcess.getStatus();
   });
 
-  ipcMain.handle(IPC_CHANNELS.AGENT_RESTART, () => {
-    agentProcess.restart();
+  ipcMain.handle(IPC_CHANNELS.AGENT_RESTART, async () => {
+    agentProcess.stop();
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const configuration = getConfiguration();
+    agentProcess.start(configuration);
     return agentProcess.getStatus();
   });
 

@@ -76,7 +76,6 @@ export function hasValidConfiguration(): boolean {
   const configuration = getConfiguration();
   return !!(
     configuration.backendUrl &&
-    configuration.secret &&
     configuration.workspaceRoots.length > 0
   );
 }
