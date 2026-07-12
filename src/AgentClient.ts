@@ -3,6 +3,7 @@
 import WebSocket from "ws";
 import crypto from "node:crypto";
 import { watch } from "node:fs";
+import { EventEmitter } from "node:events";
 import os from "node:os";
 import { resolve } from "node:path";
 import logger from "./logger.ts";
@@ -32,7 +33,7 @@ const WATCH_DEBOUNCE_MS = 300;
 // Agent Client
 // ────────────────────────────────────────────────────────────
 
-export class AgentClient {
+export class AgentClient extends EventEmitter {
   backendUrl: string;
   roots: string[];
   virtualRoots: string[];
@@ -54,6 +55,7 @@ export class AgentClient {
   methodMap: Map<string, RpcHandler>;
 
   constructor({ backendUrl, roots, name, secret, reconnectInterval = 5000 }: AgentClientOptions) {
+    super();
     this.backendUrl = backendUrl;
     this.roots = translateRoots(roots);
     // The virtual roots are what the LLM / tools-service see.
@@ -140,6 +142,7 @@ export class AgentClient {
         logger.success(`Connected to ${this.backendUrl}`);
         this._register();
         this._startHeartbeat();
+        this.emit("connected");
       });
 
       this.ws.on("message", (raw: WebSocket.RawData) => {
@@ -160,6 +163,7 @@ export class AgentClient {
         this._stopHeartbeat();
         const reasonString = reason?.toString() || "";
         logger.warn(`Disconnected (code=${code}${reasonString ? `, reason=${reasonString}` : ""})`);
+        this.emit("disconnected", { code, reason: reasonString });
 
         if (!this.intentionalClose) {
           logger.warn(`Connection lost — use Save & Reconnect to retry`);
@@ -175,6 +179,7 @@ export class AgentClient {
         } else {
           logger.error(`WebSocket error: ${wsError.message}`);
         }
+        this.emit("error", { message: wsError.message });
       });
 
       this.ws.on("unexpected-response", (_request: unknown, response: import("node:http").IncomingMessage) => {
@@ -365,6 +370,7 @@ export class AgentClient {
     if (this.reconnectAttempts <= 3 || this.reconnectAttempts % 10 === 0) {
       logger.info(`Reconnecting in ${(delay / 1000).toFixed(1)}s (attempt ${this.reconnectAttempts})…`);
     }
+    this.emit("reconnecting", { attempt: this.reconnectAttempts, delayMs: delay });
 
     setTimeout(() => {
       if (!this.intentionalClose) {

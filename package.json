@@ -21,7 +21,8 @@
     "format:check": "prettier --check \"src/**/*.ts\"",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
-    "build:standalone": "node standalone/build-binaries.mjs"
+    "build:standalone": "node standalone/esbuild-standalone.mjs",
+    "build:binaries": "npm run build:standalone && node standalone/build-binaries.mjs"
   },
   "author": "",
   "license": "ISC",
@@ -36,6 +37,7 @@
     "@types/diff": "^7.0.2",
     "@types/node": "^25.9.0",
     "@types/ws": "^8.18.1",
+    "esbuild": "^0.28.1",
     "eslint": "^10.4.0",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.6.0",
