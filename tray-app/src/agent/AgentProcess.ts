@@ -81,10 +81,20 @@ export class AgentProcess extends EventEmitter {
     const agentScriptPath = resolve(import.meta.dirname, "./agent-runner.mjs");
     const wslRunnerPath = windowsDrivePathToWslMountPath(agentScriptPath);
 
-    // Pass env vars via `env` (raw argv, no shell escaping needed) and use
-    // `bash -lic` to resolve Node through .bashrc/nvm initialization.
+    // Log all resolved paths and env values for diagnostics
+    this.appendLog("info", `[WSL] Distro: ${distroName}`);
+    this.appendLog("info", `[WSL] AGENT_CORE_PATH (Windows): ${AGENT_CORE_PATH}`);
+    this.appendLog("info", `[WSL] AGENT_CORE_PATH (WSL):     ${wslCorePath}`);
+    this.appendLog("info", `[WSL] Runner script (Windows):    ${agentScriptPath}`);
+    this.appendLog("info", `[WSL] Runner script (WSL):        ${wslRunnerPath}`);
+    this.appendLog("info", `[WSL] AGENT_ROOTS:                ${workspaceRoots.join(",")}`);
+    this.appendLog("info", `[WSL] AGENT_NAME:                 ${configuration.agentName}`);
+    this.appendLog("info", `[WSL] AGENT_BACKEND_URL:          ${backendUrl}`);
+
+    // Build spawn args — env vars as raw argv entries (no shell escaping),
+    // bash -lic to resolve Node through .bashrc/nvm initialization.
     // See WslDetector.ts header for why this specific pattern is required.
-    this.childProcess = spawn("wsl.exe", [
+    const spawnArguments = [
       "-d", distroName,
       "--",
       "env",
@@ -93,8 +103,12 @@ export class AgentProcess extends EventEmitter {
       `AGENT_ROOTS=${workspaceRoots.join(",")}`,
       `AGENT_NAME=${configuration.agentName}`,
       `AGENT_CORE_PATH=${wslCorePath}`,
-      "bash", "-lic", `exec node ${wslRunnerPath}`,
-    ], {
+      "bash", "-lic", `exec node '${wslRunnerPath}'`,
+    ];
+
+    this.appendLog("info", `[WSL] spawn("wsl.exe", ${JSON.stringify(spawnArguments)})`);
+
+    this.childProcess = spawn("wsl.exe", spawnArguments, {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });

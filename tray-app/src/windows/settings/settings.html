@@ -223,7 +223,16 @@
       settingsModeWslButton.classList.toggle("is-active-state", mode === "wsl");
       settingsWslDistroSection.style.display = mode === "wsl" ? "" : "none";
 
-      if (mode === "wsl") {
+      // WSL: user types the Linux path directly (can't browse WSL from Windows)
+      // Native: readonly field with Browse dialog
+      const isWslMode = mode === "wsl";
+      browseButton.style.display = isWslMode ? "none" : "";
+      workspacePathInput.readOnly = !isWslMode;
+      workspacePathInput.placeholder = isWslMode
+        ? "/home/user/project"
+        : "Select a directory…";
+
+      if (isWslMode) {
         loadSettingsDistros();
       } else {
         settingsWslTranslatedPath.style.display = "none";
@@ -369,22 +378,17 @@
       saveButton.disabled = true;
       saveButton.textContent = "Saving…";
 
-      const windowsPath = workspacePathInput.value.trim();
+      const workspacePath = workspacePathInput.value.trim();
       const isWslMode = settingsCurrentMode === "wsl";
 
       const configurationUpdate = {
         backendUrl: backendUrlInput.value.trim(),
         secret: secretInput.value.trim(),
-        workspaceRoots: [windowsPath],
+        workspaceRoots: [workspacePath],
         agentName: agentNameInput.value.trim(),
         wslDistro: isWslMode ? settingsWslDistroSelect.value : "",
-        wslLinuxPaths: [],
+        wslLinuxPaths: isWslMode ? [workspacePath] : [],
       };
-
-      if (isWslMode) {
-        const linuxPath = translateUncPathToLinux(windowsPath);
-        configurationUpdate.wslLinuxPaths = linuxPath ? [linuxPath] : [windowsPath];
-      }
 
       await window.prismAgent.setConfig(configurationUpdate);
       await window.prismAgent.agentRestart();
