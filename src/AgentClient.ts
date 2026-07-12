@@ -162,7 +162,7 @@ export class AgentClient {
         logger.warn(`Disconnected (code=${code}${reasonString ? `, reason=${reasonString}` : ""})`);
 
         if (!this.intentionalClose) {
-          this._scheduleReconnect();
+          logger.warn(`Connection lost — use Save & Reconnect to retry`);
         }
       });
 
@@ -176,9 +176,19 @@ export class AgentClient {
           logger.error(`WebSocket error: ${wsError.message}`);
         }
       });
+
+      this.ws.on("unexpected-response", (_request: unknown, response: import("node:http").IncomingMessage) => {
+        const statusCode = response.statusCode || 0;
+        if (statusCode === 401) {
+          logger.error(`Authentication failed — invalid or missing API secret`);
+          this.intentionalClose = true;
+          this.ws?.close();
+        } else {
+          logger.error(`Unexpected HTTP ${statusCode} during WebSocket upgrade`);
+        }
+      });
     } catch (error: unknown) {
       logger.error(`Failed to connect: ${errorMessage(error)}`);
-      this._scheduleReconnect();
     }
   }
 
