@@ -59,6 +59,9 @@ COPY --from=build /app/package.json /app/package.json
 RUN mkdir -p /workspace
 WORKDIR /workspace
 
+# Declare the actual filesystem root for path virtualization
+ENV WORKSPACE_ACTUAL_ROOT=/workspace
+
 # NOTE: Intentionally running as root.
 # The container IS the security boundary (like WSL).
 # Users have full root access inside their environment

@@ -4,8 +4,8 @@
 // The container filesystem is the jail; nothing escapes it.
 
 import { spawn } from "node:child_process";
+import path from "node:path";
 import type { CommandRunParams, NotifyFn } from "../types.ts";
-import { translatePath } from "../utils.ts";
 
 // ────────────────────────────────────────────────────────────
 // Constants
@@ -61,7 +61,7 @@ export class CommandHandler {
       let settled = false;
 
       const child = spawn("/usr/bin/bash", ["-l", "-c", command], {
-        cwd: cwd ? translatePath(cwd, this.roots) : this.roots[0],
+        cwd: cwd ? path.resolve(cwd) : this.roots[0],
         stdio: ["pipe", "pipe", "pipe"],
         env: {
           ...process.env,
@@ -149,7 +149,7 @@ export class CommandHandler {
       let settled = false;
 
       const child = spawn("/usr/bin/bash", ["-l", "-c", command], {
-        cwd: cwd ? translatePath(cwd, this.roots) : this.roots[0],
+        cwd: cwd ? path.resolve(cwd) : this.roots[0],
         stdio: ["pipe", "pipe", "pipe"],
         env: {
           ...process.env,

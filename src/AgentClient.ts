@@ -14,7 +14,6 @@ import { ProjectHandler } from "./handlers/ProjectHandler.ts";
 import type { AgentClientOptions, RpcHandler, JsonRpcRequest, WatchParams } from "./types.ts";
 import { errorMessage } from "@rodrigo-barraza/utilities-library";
 import {
-  translateRoots,
   WORKSPACE_VIRTUAL_ROOT,
   WORKSPACE_ACTUAL_ROOT,
   devirtualizeRequestParams,
@@ -58,7 +57,7 @@ export class AgentClient extends EventEmitter {
   constructor({ backendUrl, roots, name, secret, reconnectInterval = 5000 }: AgentClientOptions) {
     super();
     this.backendUrl = backendUrl;
-    this.roots = translateRoots(roots);
+    this.roots = roots.map((root: string) => resolve(root));
     // The virtual roots are what the LLM / tools-service see.
     // The actual roots (this.roots) are used internally by handlers.
     this.virtualRoots = [WORKSPACE_VIRTUAL_ROOT];

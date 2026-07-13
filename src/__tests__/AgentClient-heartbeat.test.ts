@@ -70,8 +70,9 @@ vi.mock("../handlers/ProjectHandler.ts", () => ({
 }));
 
 vi.mock("../utils.ts", () => ({
-  translateRoots: (roots: string[]) => roots,
-  WORKSPACE_VIRTUAL_ROOT: "/workspace",
+  WORKSPACE_VIRTUAL_ROOT: "/",
+  WORKSPACE_ACTUAL_ROOT: "/",
+  isVirtualized: false,
   devirtualizeRequestParams: vi.fn((params: unknown) => params),
   virtualizeResponsePaths: vi.fn((result: unknown) => result),
 }));

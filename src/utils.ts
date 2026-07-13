@@ -1,12 +1,4 @@
-import { resolve, dirname } from "node:path";
-import { existsSync } from "node:fs";
-
-// Determine host development directory (parent of workspace-service)
-const serviceRoot = resolve(dirname(new URL(import.meta.url).pathname));
-// Under 'src', so going up one level gets to the root of workspace-service
-const workspaceServiceRoot = resolve(serviceRoot, "..");
-// The parent directory of workspace-service (e.g. /home/rodrigo/development)
-const hostDevelopmentRoot = resolve(workspaceServiceRoot, "..");
+import { resolve } from "node:path";
 
 // ────────────────────────────────────────────────────────────
 // Root Virtualization
@@ -14,21 +6,17 @@ const hostDevelopmentRoot = resolve(workspaceServiceRoot, "..");
 //
 // The workspace agent exposes a virtual root "/" to the LLM so it can
 // work with clean paths ("/src/foo.ts") instead of container-internal
-// paths ("/workspace/src/foo.ts"). The actual mount is at /workspace,
-// but the agent registers root "/" and translates at the RPC boundary.
+// paths ("/workspace/src/foo.ts"). The actual mount point varies by
+// deployment and MUST be explicitly configured via environment variable.
 //
 // WORKSPACE_VIRTUAL_ROOT  – the root the LLM sees (default: "/")
-// WORKSPACE_ACTUAL_ROOT   – the filesystem mount (default: "/workspace")
+// WORKSPACE_ACTUAL_ROOT   – the real filesystem mount (default: "/", no-op)
+//
+// Docker deployments must set WORKSPACE_ACTUAL_ROOT=/workspace explicitly.
+// When both are equal, virtualization is a no-op (standalone/WSL mode).
 
 export const WORKSPACE_VIRTUAL_ROOT = process.env.WORKSPACE_VIRTUAL_ROOT || "/";
-
-// When running outside Docker, /workspace doesn't exist — disable virtualization
-// by defaulting WORKSPACE_ACTUAL_ROOT to the virtual root so both are equal.
-// This prevents devirtualizePath from corrupting real absolute paths
-// (e.g. /home/rodrigo/development → /workspace/home/rodrigo/development).
-const isInsideDocker = existsSync("/workspace");
-export const WORKSPACE_ACTUAL_ROOT  = process.env.WORKSPACE_ACTUAL_ROOT
-  || (isInsideDocker ? "/workspace" : WORKSPACE_VIRTUAL_ROOT);
+export const WORKSPACE_ACTUAL_ROOT  = process.env.WORKSPACE_ACTUAL_ROOT || WORKSPACE_VIRTUAL_ROOT;
 
 // Whether virtualization is active (virtual ≠ actual)
 export const isVirtualized =
@@ -154,40 +142,6 @@ export function devirtualizeRequestParams(value: unknown, fieldName?: string): u
 }
 
 // ────────────────────────────────────────────────────────────
-// Legacy Translation (development mode outside Docker)
-// ────────────────────────────────────────────────────────────
-
-export function translatePath(inputPath: string, roots?: string[]): string {
-  if (!inputPath || typeof inputPath !== "string") {
-    return inputPath;
-  }
-
-  // Only translate absolute paths that start with "/workspace" when the
-  // "/workspace" directory does not exist on this host (i.e. running outside Docker).
-  // All other paths (relative like ".", "./src", or other absolute paths) pass
-  // through unchanged so the caller's resolve(roots[0], path) logic works correctly.
-  if ((inputPath === "/workspace" || inputPath.startsWith("/workspace/")) && !existsSync("/workspace")) {
-    const localRoot = (roots && roots.length > 0) ? roots[0] : hostDevelopmentRoot;
-
-    if (inputPath === "/workspace") {
-      return localRoot;
-    }
-    return localRoot + inputPath.slice("/workspace".length);
-  }
-
-  return inputPath;
-}
-
-export function translateRoots(roots: string[]): string[] {
-  return roots.map((root: string) => {
-    if (root === "/workspace" && !existsSync("/workspace")) {
-      return hostDevelopmentRoot;
-    }
-    return root;
-  });
-}
-
-// ────────────────────────────────────────────────────────────
 // Centralized Path Validation
 // ────────────────────────────────────────────────────────────
 
@@ -209,10 +163,8 @@ export function validateWorkspacePath(inputPath: string, roots: string[]): PathV
   if (!sanitizedPath) {
     return { safe: false, resolved: "", error: "Path is required" };
   }
-  const translated = translatePath(sanitizedPath, roots);
-  const resolved = translated.startsWith("/")
-    ? resolve(translated)
-    : resolve(roots[0], translated);
+  const resolved = sanitizedPath.startsWith("/")
+    ? resolve(sanitizedPath)
+    : resolve(roots[0], sanitizedPath);
   return { safe: true, resolved };
 }
-
