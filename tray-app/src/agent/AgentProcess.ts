@@ -111,6 +111,7 @@ export class AgentProcess extends EventEmitter {
       `AGENT_ROOTS=${workspaceRoots.join(",")}`,
       `AGENT_NAME=${configuration.agentName}`,
       `AGENT_CORE_PATH=${wslCorePath}`,
+      `AGENT_WSL_DISTRO=${distroName}`,
       "bash", "-lic", `exec node '${wslRunnerPath}'`,
     ];
 

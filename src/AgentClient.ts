@@ -16,6 +16,7 @@ import { errorMessage } from "@rodrigo-barraza/utilities-library";
 import {
   translateRoots,
   WORKSPACE_VIRTUAL_ROOT,
+  WORKSPACE_ACTUAL_ROOT,
   devirtualizeRequestParams,
   virtualizeResponsePaths,
 } from "./utils.ts";
@@ -221,6 +222,19 @@ export class AgentClient extends EventEmitter {
     const cpuModels = os.cpus();
     const primaryCpuModel = cpuModels.length > 0 ? cpuModels[0].model.trim() : "unknown";
 
+    // Detect WSL2 from kernel release (e.g., "5.15.187.4-microsoft-standard-WSL2")
+    const kernelRelease = os.release();
+    const isWsl = /microsoft/i.test(kernelRelease);
+
+    // WSL2 sets WSL_DISTRO_NAME automatically; tray app also forwards it as AGENT_WSL_DISTRO
+    const wslDistro = process.env.WSL_DISTRO_NAME || process.env.AGENT_WSL_DISTRO || undefined;
+
+    // Only include displayRoots when they provide meaningful path info.
+    // Docker containers use WORKSPACE_ACTUAL_ROOT ("/workspace") — an internal
+    // mount path that's not useful to display. In that case, omit displayRoots
+    // so the UI falls back to the virtual root.
+    const isDockerMount = this.roots.length === 1 && this.roots[0] === WORKSPACE_ACTUAL_ROOT;
+
     this._send({
       jsonrpc: "2.0",
       method: "agent.register",
@@ -228,17 +242,19 @@ export class AgentClient extends EventEmitter {
         agentId: this.agentId,
         name: this.name,
         roots: this.virtualRoots,
-        displayRoots: this.roots,
+        ...(isDockerMount ? {} : { displayRoots: this.roots }),
         capabilities: ["file", "git", "command", "project"],
         machineInfo: {
           hostname: os.hostname(),
           platform: os.platform(),
           arch: os.arch(),
-          release: os.release(),
+          release: kernelRelease,
           username: os.userInfo().username,
           cpuModel: primaryCpuModel,
           cpuCores: cpuModels.length,
           totalMemoryBytes: os.totalmem(),
+          ...(isWsl ? { isWsl: true } : {}),
+          ...(wslDistro ? { wslDistro } : {}),
         },
       },
     });
