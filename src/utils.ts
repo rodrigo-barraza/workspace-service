@@ -21,7 +21,14 @@ const hostDevelopmentRoot = resolve(workspaceServiceRoot, "..");
 // WORKSPACE_ACTUAL_ROOT   – the filesystem mount (default: "/workspace")
 
 export const WORKSPACE_VIRTUAL_ROOT = process.env.WORKSPACE_VIRTUAL_ROOT || "/";
-export const WORKSPACE_ACTUAL_ROOT  = process.env.WORKSPACE_ACTUAL_ROOT  || "/workspace";
+
+// When running outside Docker, /workspace doesn't exist — disable virtualization
+// by defaulting WORKSPACE_ACTUAL_ROOT to the virtual root so both are equal.
+// This prevents devirtualizePath from corrupting real absolute paths
+// (e.g. /home/rodrigo/development → /workspace/home/rodrigo/development).
+const isInsideDocker = existsSync("/workspace");
+export const WORKSPACE_ACTUAL_ROOT  = process.env.WORKSPACE_ACTUAL_ROOT
+  || (isInsideDocker ? "/workspace" : WORKSPACE_VIRTUAL_ROOT);
 
 // Whether virtualization is active (virtual ≠ actual)
 export const isVirtualized =

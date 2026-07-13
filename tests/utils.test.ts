@@ -127,18 +127,97 @@ describe("Path Translation Utilities", () => {
 });
 
 // ══════════════════════════════════════════════════════════════
+// Non-Docker Auto-Detection (WSL / native host)
+// ══════════════════════════════════════════════════════════════
+//
+// When /workspace does NOT exist (running outside Docker),
+// WORKSPACE_ACTUAL_ROOT defaults to WORKSPACE_VIRTUAL_ROOT ("/"),
+// making isVirtualized = false. This prevents the double-path bug
+// where devirtualizePath transformed /home/rodrigo/development
+// into /workspace/home/rodrigo/development.
+
+describe("Non-Docker Auto-Detection (no /workspace directory)", () => {
+
+  beforeEach(() => {
+    vi.resetModules();
+    // Simulate non-Docker: /workspace does NOT exist
+    vi.mocked(fs.existsSync).mockReturnValue(false);
+  });
+
+  it("should disable virtualization when /workspace doesn't exist", async () => {
+    const { isVirtualized, WORKSPACE_VIRTUAL_ROOT, WORKSPACE_ACTUAL_ROOT } = await import("../src/utils.ts");
+
+    expect(isVirtualized).toBe(false);
+    expect(WORKSPACE_VIRTUAL_ROOT).toBe("/");
+    expect(WORKSPACE_ACTUAL_ROOT).toBe("/");
+  });
+
+  it("devirtualizePath should pass through all paths unchanged", async () => {
+    const { devirtualizePath } = await import("../src/utils.ts");
+
+    expect(devirtualizePath("/home/rodrigo/development")).toBe("/home/rodrigo/development");
+    expect(devirtualizePath("/src/foo.ts")).toBe("/src/foo.ts");
+    expect(devirtualizePath("/")).toBe("/");
+    expect(devirtualizePath(".")).toBe(".");
+    expect(devirtualizePath("")).toBe("");
+  });
+
+  it("virtualizePath should pass through all paths unchanged", async () => {
+    const { virtualizePath } = await import("../src/utils.ts");
+
+    expect(virtualizePath("/home/rodrigo/development/prism-service/src/index.ts"))
+      .toBe("/home/rodrigo/development/prism-service/src/index.ts");
+    expect(virtualizePath("/workspace/src/foo.ts")).toBe("/workspace/src/foo.ts");
+  });
+
+  it("devirtualizeRequestParams should NOT transform path fields", async () => {
+    const { devirtualizeRequestParams } = await import("../src/utils.ts");
+
+    const params = {
+      path: "/home/rodrigo/development",
+      recursive: false,
+    };
+    const result = devirtualizeRequestParams(params) as Record<string, unknown>;
+
+    expect(result.path).toBe("/home/rodrigo/development");
+    expect(result.recursive).toBe(false);
+  });
+
+  it("virtualizeResponsePaths should NOT transform response paths", async () => {
+    const { virtualizeResponsePaths } = await import("../src/utils.ts");
+
+    const response = {
+      filePath: "/home/rodrigo/development/prism-service/src/index.ts",
+      totalLines: 42,
+      content: "const x = 1;",
+    };
+    const result = virtualizeResponsePaths(response) as Record<string, unknown>;
+
+    expect(result.filePath).toBe("/home/rodrigo/development/prism-service/src/index.ts");
+    expect(result.content).toBe("const x = 1;");
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
 // Path Virtualization (LLM sees "/" → actual "/workspace")
 // ══════════════════════════════════════════════════════════════
 //
-// In the test environment, the env vars are not set, so defaults apply:
+// These tests simulate Docker mode where /workspace exists, so
+// the auto-detection logic enables virtualization:
 //   WORKSPACE_VIRTUAL_ROOT = "/"  (default)
-//   WORKSPACE_ACTUAL_ROOT  = "/workspace"  (default)
+//   WORKSPACE_ACTUAL_ROOT  = "/workspace"  (detected Docker)
 //   isVirtualized          = true
 //
-// These tests exercise devirtualizePath, virtualizePath, and the
-// field-name-aware recursive translators.
+// Each test uses vi.resetModules() + fresh import to force the
+// module to re-evaluate isInsideDocker with the mock in place.
 
 describe("Path Virtualization (LLM sees '/' → actual '/workspace')", () => {
+
+  beforeEach(() => {
+    vi.resetModules();
+    // Simulate Docker: /workspace exists on this host
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+  });
 
   // ────────────────────────────────────────────────────────────
   // devirtualizePath — incoming: LLM path → filesystem path
