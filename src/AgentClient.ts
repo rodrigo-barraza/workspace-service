@@ -228,6 +228,7 @@ export class AgentClient extends EventEmitter {
         agentId: this.agentId,
         name: this.name,
         roots: this.virtualRoots,
+        displayRoots: this.roots,
         capabilities: ["file", "git", "command", "project"],
         machineInfo: {
           hostname: os.hostname(),
