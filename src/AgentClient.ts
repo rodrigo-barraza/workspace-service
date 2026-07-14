@@ -13,6 +13,7 @@ import { CommandHandler } from "./handlers/CommandHandler.ts";
 import { ProjectHandler } from "./handlers/ProjectHandler.ts";
 import type { AgentClientOptions, RpcHandler, JsonRpcRequest, WatchParams } from "./types.ts";
 import { errorMessage } from "@rodrigo-barraza/utilities-library";
+import { AUTH_HEADERS } from "@rodrigo-barraza/utilities-library/taxonomy";
 import {
   WORKSPACE_VIRTUAL_ROOT,
   WORKSPACE_ACTUAL_ROOT,
@@ -166,7 +167,7 @@ export class AgentClient extends EventEmitter {
     try {
       const headers: Record<string, string> = {};
       if (this.secret) {
-        headers["x-api-secret"] = this.secret;
+        headers[AUTH_HEADERS.apiSecret] = this.secret;
       }
 
       this.ws = new WebSocket(this.backendUrl, { headers });

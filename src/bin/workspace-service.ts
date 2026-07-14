@@ -79,10 +79,10 @@ if (!backendUrl.includes("/ws/agent")) {
 let secret = cliOptions.secret || "";
 if (!secret) {
   try {
-    const { connectDatabase, disconnectDatabase } = await import("@rodrigo-barraza/utilities-library/mongo");
+    const { connectDatabase, disconnectDatabase } = await import("@rodrigo-barraza/service-library/mongo");
     const mongoUri = process.env.MONGO_URI;
     if (mongoUri) {
-      const database = await connectDatabase(mongoUri, "prism");
+      const database = await connectDatabase(mongoUri, { dbName: "prism" });
       const settingsDocument = await database
         .collection("settings")
         .findOne({ _key: "global" });
