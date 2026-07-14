@@ -221,7 +221,14 @@ export class AgentClient extends EventEmitter {
         } else {
           logger.error(`WebSocket error: ${wsError.message}`);
         }
-        this.emit("error", { message: wsError.message });
+        // "error" is a reserved EventEmitter name: emitting it with no
+        // listener throws ERR_UNHANDLED_ERROR and kills the process (observed
+        // in the container binary, which — unlike the tray app — has no error
+        // subscriber, when the backend dropped mid-deploy). Only re-emit when
+        // someone is actually listening; the log line above already records it.
+        if (this.listenerCount("error") > 0) {
+          this.emit("error", { message: wsError.message });
+        }
       });
 
       this.ws.on("unexpected-response", (_request: unknown, response: import("node:http").IncomingMessage) => {

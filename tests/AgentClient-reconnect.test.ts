@@ -348,3 +348,35 @@ describe("AgentClient — watch event batching", () => {
     expect(notifications.length).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe("AgentClient — websocket error resilience", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it("survives a socket error with no consumer 'error' subscriber (ERR_UNHANDLED_ERROR regression)", () => {
+    // Observed in production: the container binary (no error subscriber)
+    // crashed with ERR_UNHANDLED_ERROR when the backend dropped mid-deploy.
+    const agent = createAgentClient();
+    agent.connect();
+    const socket = agent.ws as unknown as MockWebSocket;
+
+    expect(() => socket.emit("error", new Error("socket hang up"))).not.toThrow();
+  });
+
+  it("still re-emits socket errors to consumers that subscribe (tray app)", () => {
+    const agent = createAgentClient();
+    agent.connect();
+    const seen: unknown[] = [];
+    agent.on("error", (detail: unknown) => seen.push(detail));
+
+    (agent.ws as unknown as MockWebSocket).emit("error", new Error("boom"));
+
+    expect(seen).toEqual([{ message: "boom" }]);
+  });
+});
