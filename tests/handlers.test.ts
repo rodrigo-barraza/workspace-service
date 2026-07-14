@@ -60,6 +60,116 @@ describe("FileHandler.stringReplace", () => {
   });
 });
 
+// ── blockReplace ────────────────────────────────────────────
+
+describe("FileHandler.blockReplace", () => {
+  it("replaces the targeted range when targetContent matches (happy path)", async () => {
+    const filePath = join(workspaceRoot, "block-happy.txt");
+    await writeFile(filePath, "line1\nline2\nline3\nline4\n", "utf-8");
+
+    const result = await fileHandler.blockReplace({
+      path: filePath,
+      startLine: 2,
+      endLine: 3,
+      targetContent: "line2\nline3",
+      replacementContent: "REPLACED",
+    });
+
+    expect(result).not.toHaveProperty("error");
+    expect((result as { success: boolean }).success).toBe(true);
+    expect((result as { lineDelta: number }).lineDelta).toBe(-1);
+    expect(await readFile(filePath, "utf-8")).toBe("line1\nREPLACED\nline4\n");
+  });
+
+  it("rejects with numbered actual content when targetContent does not match", async () => {
+    const filePath = join(workspaceRoot, "block-mismatch.txt");
+    await writeFile(filePath, "alpha\nbravo\ncharlie\n", "utf-8");
+
+    const result = await fileHandler.blockReplace({
+      path: filePath,
+      startLine: 1,
+      endLine: 2,
+      targetContent: "alpha\nWRONG",
+      replacementContent: "x",
+    });
+
+    expect((result as { error: string }).error).toContain("does not match targetContent");
+    expect((result as { actualContentInRange: string }).actualContentInRange).toBe("1: alpha\n2: bravo");
+    // File left untouched
+    expect(await readFile(filePath, "utf-8")).toBe("alpha\nbravo\ncharlie\n");
+  });
+});
+
+// ── multiReplace ────────────────────────────────────────────
+
+describe("FileHandler.multiReplace", () => {
+  it("applies multiple chunks bottom-up so earlier offsets don't shift (happy path)", async () => {
+    const filePath = join(workspaceRoot, "multi-happy.txt");
+    await writeFile(filePath, "a\nb\nc\nd\ne\n", "utf-8");
+
+    // Chunk order intentionally not sorted; the top chunk grows the file, which
+    // would corrupt the bottom chunk's indices if applied top-down.
+    const result = await fileHandler.multiReplace({
+      path: filePath,
+      chunks: [
+        { startLine: 1, endLine: 1, targetContent: "a", replacementContent: "A1\nA2" },
+        { startLine: 4, endLine: 5, targetContent: "d\ne", replacementContent: "DE" },
+      ],
+    });
+
+    expect(result).not.toHaveProperty("error");
+    expect((result as { success: boolean }).success).toBe(true);
+    expect((result as { chunksProcessed: number }).chunksProcessed).toBe(2);
+    expect(await readFile(filePath, "utf-8")).toBe("A1\nA2\nb\nc\nDE\n");
+  });
+
+  it("applies nothing when any chunk fails to match (all-or-nothing)", async () => {
+    const filePath = join(workspaceRoot, "multi-badchunk.txt");
+    const original = "one\ntwo\nthree\nfour\n";
+    await writeFile(filePath, original, "utf-8");
+
+    const result = await fileHandler.multiReplace({
+      path: filePath,
+      chunks: [
+        { startLine: 1, endLine: 1, targetContent: "one", replacementContent: "ONE" },
+        { startLine: 3, endLine: 3, targetContent: "WRONG", replacementContent: "THREE" },
+      ],
+    });
+
+    expect((result as { error: string }).error).toContain("No changes were applied to the file");
+    expect((result as { error: string }).error).toContain("[3, 3]");
+    expect((result as { actualContentInRange: string }).actualContentInRange).toBe("3: three");
+    // Even the valid first chunk must NOT have been applied
+    expect(await readFile(filePath, "utf-8")).toBe(original);
+  });
+});
+
+// ── recursive delete ────────────────────────────────────────
+
+describe("FileHandler.deleteFile recursive", () => {
+  it("refuses to delete a directory without recursive, mentioning the flag", async () => {
+    const dirPath = join(workspaceRoot, "del-dir-refuse");
+    await mkdir(join(dirPath, "sub"), { recursive: true });
+    await writeFile(join(dirPath, "sub", "f.txt"), "hi", "utf-8");
+
+    const result = await fileHandler.deleteFile({ path: dirPath });
+    expect((result as { error: string }).error).toContain("recursive");
+  });
+
+  it("removes a directory tree when recursive is true", async () => {
+    const dirPath = join(workspaceRoot, "del-dir-recursive");
+    await mkdir(join(dirPath, "sub"), { recursive: true });
+    await writeFile(join(dirPath, "sub", "f.txt"), "hi", "utf-8");
+
+    const result = await fileHandler.deleteFile({ path: dirPath, recursive: true });
+    expect(result).not.toHaveProperty("error");
+    expect((result as { deleted: boolean }).deleted).toBe(true);
+    expect((result as { isDirectory: boolean }).isDirectory).toBe(true);
+    const { existsSync } = await import("node:fs");
+    expect(existsSync(dirPath)).toBe(false);
+  });
+});
+
 // ── writeFile: binary + containment ─────────────────────────
 
 describe("FileHandler.writeFile", () => {
@@ -176,6 +286,19 @@ describe("CommandHandler", () => {
     }
     expect(grandchildAlive).toBe(false);
   }, 15_000);
+
+  it("refuses runInBackground honestly instead of blocking then killing", async () => {
+    const start = Date.now();
+    const result = await commandHandler.run({
+      command: "sleep 300",
+      cwd: workspaceRoot,
+      runInBackground: true,
+    });
+    // Must return immediately, not run to any timeout
+    expect(Date.now() - start).toBeLessThan(1000);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Background execution is not supported");
+  });
 
   it("strips credential-shaped env vars from spawned commands", async () => {
     process.env.WORKSPACE_TEST_FAKE_SECRET = "leak-me";

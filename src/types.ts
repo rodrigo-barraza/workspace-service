@@ -87,6 +87,27 @@ export interface MoveFileParams {
 
 export interface DeleteFileParams {
   path: string;
+  recursive?: boolean;
+}
+
+export interface BlockReplaceParams {
+  path: string;
+  startLine: number;
+  endLine: number;
+  targetContent: string;
+  replacementContent: string;
+}
+
+export interface MultiReplaceChunk {
+  startLine: number;
+  endLine: number;
+  targetContent: string;
+  replacementContent: string;
+}
+
+export interface MultiReplaceParams {
+  path: string;
+  chunks: MultiReplaceChunk[];
 }
 
 export interface MultiFileReadParams {
@@ -146,6 +167,9 @@ export interface CommandRunParams {
   command: string;
   cwd?: string;
   timeout?: number;
+  // The local tools-service advertises background execution; this remote agent
+  // has no background registry, so the flag is refused rather than dropped.
+  runInBackground?: boolean;
 }
 
 // ── Project Operations ──────────────────────────────────────

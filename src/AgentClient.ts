@@ -102,6 +102,8 @@ export class AgentClient extends EventEmitter {
       ["file.read", (rpcParams) => this.fileHandler.readFile(rpcParams as unknown as Parameters<FileHandler["readFile"]>[0])],
       ["file.write", (rpcParams) => this.fileHandler.writeFile(rpcParams as unknown as Parameters<FileHandler["writeFile"]>[0])],
       ["file.strReplace", (rpcParams) => this.fileHandler.stringReplace(rpcParams as unknown as Parameters<FileHandler["stringReplace"]>[0])],
+      ["file.blockReplace", (rpcParams) => this.fileHandler.blockReplace(rpcParams as unknown as Parameters<FileHandler["blockReplace"]>[0])],
+      ["file.multiReplace", (rpcParams) => this.fileHandler.multiReplace(rpcParams as unknown as Parameters<FileHandler["multiReplace"]>[0])],
       ["file.patch", (rpcParams) => this.fileHandler.patchFile(rpcParams as unknown as Parameters<FileHandler["patchFile"]>[0])],
       ["file.info", (rpcParams) => this.fileHandler.fileInfo(rpcParams as unknown as Parameters<FileHandler["fileInfo"]>[0])],
       ["file.diff", (rpcParams) => this.fileHandler.fileDiff(rpcParams as unknown as Parameters<FileHandler["fileDiff"]>[0])],

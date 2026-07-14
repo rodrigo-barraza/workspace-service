@@ -1,6 +1,6 @@
 // ─── Local File System Operations ───────────────────────────
 
-import { readFile, writeFile, stat, readdir, mkdir, rename, unlink } from "node:fs/promises";
+import { readFile, writeFile, stat, readdir, mkdir, rename, unlink, rm } from "node:fs/promises";
 import { resolve, relative, extname, dirname } from "node:path";
 import { existsSync } from "node:fs";
 import { escapeRegex, errorMessage } from "@rodrigo-barraza/utilities-library";
@@ -8,6 +8,7 @@ import { validateWorkspacePath } from "../utils.ts";
 import type {
   ReadFileParams, WriteFileParams, StringReplaceParameters, PatchFileParams,
   FileInfoParams, FileDiffParams, MoveFileParams, DeleteFileParams,
+  BlockReplaceParams, MultiReplaceParams,
   MultiFileReadParams, ListDirectoryParams, CreateDirectoryParams,
   GrepSearchParams, GlobFilesParams,
   FileInfoEntry, DirectoryEntry, GrepMatch, GlobMatch, TreeEntry,
@@ -440,24 +441,231 @@ export class FileHandler {
     }
   }
 
-  async deleteFile({ path: filePath }: DeleteFileParams) {
+  async deleteFile({ path: filePath, recursive = false }: DeleteFileParams) {
     const validation = this.validatePath(filePath);
     if (!validation.safe) return { error: validation.error };
 
     try {
       const stats = await stat(validation.resolved);
+      const sizeBytes = stats.isDirectory() ? 0 : stats.size;
+
       if (stats.isDirectory()) {
-        return { error: `'${validation.resolved}' is a directory. Only files can be deleted.` };
+        if (!recursive) {
+          return {
+            error: `'${validation.resolved}' is a directory. Only files can be deleted with this tool, unless the 'recursive' parameter is set to true.`,
+          };
+        }
+        await rm(validation.resolved, { recursive: true, force: true });
+      } else {
+        await unlink(validation.resolved);
       }
 
-      const sizeBytes = stats.size;
-      await unlink(validation.resolved);
-
-      return { filePath: validation.resolved, deleted: true, sizeBytes };
+      return {
+        filePath: validation.resolved,
+        deleted: true,
+        isDirectory: stats.isDirectory(),
+        sizeBytes,
+      };
     } catch (error: unknown) {
       const errorObject = error as NodeJS.ErrnoException;
-      if (errorObject.code === "ENOENT") return { error: `File not found: ${validation.resolved}` };
+      if (errorObject.code === "ENOENT") return { error: `File or directory not found: ${validation.resolved}` };
       return { error: `delete_file failed: ${errorObject.message}` };
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // Surgical Block & Multi-Block Editing
+  // ──────────────────────────────────────────────────────────
+
+  /**
+   * Replace a bounded block of lines (startLine..endLine, 1-based inclusive)
+   * after verifying the current content in that range exactly matches
+   * targetContent. Mirrors the local AgenticFileService.agenticBlockReplace.
+   */
+  async blockReplace({ path: filePath, startLine, endLine, targetContent, replacementContent }: BlockReplaceParams) {
+    const validation = this.validatePath(filePath);
+    if (!validation.safe) return { error: validation.error };
+
+    if (typeof startLine !== "number" || startLine <= 0) {
+      return { error: "'startLine' must be a positive integer" };
+    }
+    if (typeof endLine !== "number" || endLine < startLine) {
+      return { error: "'endLine' must be an integer greater than or equal to startLine" };
+    }
+    if (typeof targetContent !== "string") {
+      return { error: "'targetContent' must be a string" };
+    }
+    if (typeof replacementContent !== "string") {
+      return { error: "'replacementContent' must be a string" };
+    }
+
+    const resolved = validation.resolved;
+
+    try {
+      const raw = await readFile(resolved, "utf-8");
+      const lines = raw.split("\n");
+      const totalLines = lines.length;
+
+      if (startLine > totalLines || endLine > totalLines) {
+        return {
+          error: `Line range [${startLine}, ${endLine}] exceeds total file lines (${totalLines})`,
+          filePath: resolved,
+        };
+      }
+
+      const segment = lines.slice(startLine - 1, endLine).join("\n");
+
+      // Precise match (including whitespace)
+      if (segment !== targetContent) {
+        const numberedActual = lines
+          .slice(startLine - 1, endLine)
+          .map((line: string, i: number) => `${startLine + i}: ${line}`)
+          .join("\n");
+        return {
+          error: `Content in line range [${startLine}, ${endLine}] does not match targetContent.`,
+          filePath: resolved,
+          actualContentInRange: numberedActual,
+        };
+      }
+
+      const before = lines.slice(0, startLine - 1);
+      const after = lines.slice(endLine);
+      const newSegmentLines = replacementContent.split("\n");
+      const updatedContent = [...before, ...newSegmentLines, ...after].join("\n");
+
+      await writeFileAtomic(resolved, updatedContent);
+
+      const oldLinesCount = endLine - startLine + 1;
+      const newLinesCount = newSegmentLines.length;
+
+      return {
+        filePath: resolved,
+        success: true,
+        oldLines: oldLinesCount,
+        newLines: newLinesCount,
+        lineDelta: newLinesCount - oldLinesCount,
+      };
+    } catch (error: unknown) {
+      const errorObject = error as NodeJS.ErrnoException;
+      if (errorObject.code === "ENOENT") return { error: `File not found: ${resolved}` };
+      return { error: `block_replace failed: ${errorObject.message}` };
+    }
+  }
+
+  /**
+   * Apply multiple non-contiguous block replacements atomically. Every chunk's
+   * targetContent is verified against the current file first; only if all pass
+   * is a single atomic write performed. Replacements are applied bottom-up
+   * (descending startLine) so earlier line offsets don't shift later chunks.
+   * Mirrors the local AgenticFileService.agenticMultiReplace.
+   */
+  async multiReplace({ path: filePath, chunks }: MultiReplaceParams) {
+    const validation = this.validatePath(filePath);
+    if (!validation.safe) return { error: validation.error };
+
+    if (!Array.isArray(chunks) || chunks.length === 0) {
+      return { error: "'chunks' must be a non-empty array of replacement chunks" };
+    }
+    if (chunks.length > 30) {
+      return { error: `Maximum 30 chunks per batch. Received ${chunks.length}.` };
+    }
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      if (typeof chunk.startLine !== "number" || chunk.startLine <= 0) {
+        return { error: `Chunk ${i}: 'startLine' must be a positive integer` };
+      }
+      if (typeof chunk.endLine !== "number" || chunk.endLine < chunk.startLine) {
+        return { error: `Chunk ${i}: 'endLine' must be an integer greater than or equal to startLine` };
+      }
+      if (typeof chunk.targetContent !== "string") {
+        return { error: `Chunk ${i}: 'targetContent' must be a string` };
+      }
+      if (typeof chunk.replacementContent !== "string") {
+        return { error: `Chunk ${i}: 'replacementContent' must be a string` };
+      }
+    }
+
+    const resolved = validation.resolved;
+
+    try {
+      const raw = await readFile(resolved, "utf-8");
+      let lines = raw.split("\n");
+
+      // Reject overlapping/touching chunks up front (no changes applied).
+      const sortedAsc = [...chunks].sort((a, b) => a.startLine - b.startLine);
+      for (let i = 0; i < sortedAsc.length - 1; i++) {
+        if (sortedAsc[i].endLine >= sortedAsc[i + 1].startLine) {
+          return {
+            error: `No changes were applied to the file. Chunks overlap or touch: [${sortedAsc[i].startLine}, ${sortedAsc[i].endLine}] overlaps/touches [${sortedAsc[i + 1].startLine}, ${sortedAsc[i + 1].endLine}]`,
+            filePath: resolved,
+          };
+        }
+      }
+
+      // Verify every chunk against the ORIGINAL content before applying any.
+      // Line numbers in each chunk refer to the file as it currently is, so
+      // verification uses the original `lines`; application happens bottom-up.
+      for (const chunk of chunks) {
+        if (chunk.startLine > lines.length || chunk.endLine > lines.length) {
+          return {
+            error: `No changes were applied to the file. Chunk range [${chunk.startLine}, ${chunk.endLine}] exceeds total file lines (${lines.length}).`,
+            filePath: resolved,
+          };
+        }
+        const segment = lines.slice(chunk.startLine - 1, chunk.endLine).join("\n");
+        if (segment !== chunk.targetContent) {
+          const numberedActual = lines
+            .slice(chunk.startLine - 1, chunk.endLine)
+            .map((line: string, i: number) => `${chunk.startLine + i}: ${line}`)
+            .join("\n");
+          return {
+            error: `No changes were applied to the file. Chunk in range [${chunk.startLine}, ${chunk.endLine}] does not match targetContent.`,
+            filePath: resolved,
+            actualContentInRange: numberedActual,
+          };
+        }
+      }
+
+      // All chunks verified — apply bottom-up so earlier offsets don't shift.
+      const sortedDesc = [...chunks].sort((a, b) => b.startLine - a.startLine);
+      const chunkResults: Array<{ startLine: number; endLine: number; oldLines: number; newLines: number; lineDelta: number }> = [];
+      let overallLineDelta = 0;
+
+      for (const chunk of sortedDesc) {
+        const before = lines.slice(0, chunk.startLine - 1);
+        const after = lines.slice(chunk.endLine);
+        const newSegmentLines = chunk.replacementContent.split("\n");
+        lines = [...before, ...newSegmentLines, ...after];
+
+        const oldLinesCount = chunk.endLine - chunk.startLine + 1;
+        const newLinesCount = newSegmentLines.length;
+        const delta = newLinesCount - oldLinesCount;
+        overallLineDelta += delta;
+
+        chunkResults.push({
+          startLine: chunk.startLine,
+          endLine: chunk.endLine,
+          oldLines: oldLinesCount,
+          newLines: newLinesCount,
+          lineDelta: delta,
+        });
+      }
+
+      // Single atomic write — all-or-nothing.
+      await writeFileAtomic(resolved, lines.join("\n"));
+
+      return {
+        filePath: resolved,
+        success: true,
+        chunksProcessed: chunkResults.length,
+        overallLineDelta,
+        details: chunkResults.reverse(),
+      };
+    } catch (error: unknown) {
+      const errorObject = error as NodeJS.ErrnoException;
+      if (errorObject.code === "ENOENT") return { error: `File not found: ${resolved}` };
+      return { error: `multi_replace failed: ${errorObject.message}` };
     }
   }
 

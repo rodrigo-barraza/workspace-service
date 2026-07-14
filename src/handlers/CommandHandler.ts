@@ -105,11 +105,26 @@ export class CommandHandler {
     return this._execute(params, notify);
   }
 
-  private async _execute({ command, cwd, timeout = DEFAULT_TIMEOUT_MS }: CommandRunParams, notify: NotifyFn | undefined): Promise<CommandResult> {
+  private async _execute({ command, cwd, timeout = DEFAULT_TIMEOUT_MS, runInBackground = false }: CommandRunParams, notify: NotifyFn | undefined): Promise<CommandResult> {
     const clampedTimeout = Math.min(Math.max(timeout, 1000), MAX_TIMEOUT_MS);
 
     if (!command || typeof command !== "string") {
       return { success: false, stdout: "", stderr: "", exitCode: null, executionTimeMs: 0, error: "Command is required (string)" };
+    }
+
+    // The local tools-service supports run_in_background via a process registry.
+    // This remote agent has none: a "backgrounded" command would just run to the
+    // timeout and then be SIGKILLed, silently losing the process. Refuse honestly
+    // instead of pretending to background it.
+    if (runInBackground) {
+      return {
+        success: false,
+        stdout: "",
+        stderr: "",
+        exitCode: null,
+        executionTimeMs: 0,
+        error: "Background execution is not supported on this remote workspace agent; the command would be killed at the timeout. Run without run_in_background, or run it on the local workspace.",
+      };
     }
 
     const startTime = performance.now();
