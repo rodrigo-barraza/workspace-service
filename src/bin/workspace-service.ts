@@ -2,6 +2,7 @@
 // ─── CLI Entry Point ────────────────────────────────────────
 
 import { program } from "commander";
+import { getErrorMessage } from "@rodrigo-barraza/utilities-library";
 import { resolve } from "node:path";
 import { existsSync, statSync } from "node:fs";
 import { hostname } from "node:os";
@@ -96,7 +97,7 @@ if (!secret) {
     // A silent failure here used to mean: connect secretless → 401 → give up.
     // Surface it so a mistyped MONGO_URI or DB outage is diagnosable.
     logger.warn(
-      `Could not load secret from settings DB — continuing without it: ${error instanceof Error ? error.message : String(error)}`,
+      `Could not load secret from settings DB — continuing without it: ${getErrorMessage(error)}`,
     );
   }
 }
