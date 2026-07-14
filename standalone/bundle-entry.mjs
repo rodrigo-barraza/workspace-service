@@ -16,4 +16,7 @@ import { hostname } from "node:os";
 export { AgentClient as WorkspaceAgent };
 export { setLogger };
 export { hostname };
-export const AGENT_VERSION = "0.1.0";
+// Version literal with an env override for builds. Ideally
+// esbuild-standalone.mjs should eventually inject this at bundle
+// time (e.g. via esbuild's `define`) instead of hardcoding it here.
+export const AGENT_VERSION = process.env.AGENT_VERSION || "0.1.0";

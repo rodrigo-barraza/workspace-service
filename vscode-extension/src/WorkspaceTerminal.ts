@@ -4,7 +4,7 @@
 // workspace directly from VS Code's integrated terminal.
 
 import * as vscode from "vscode";
-import { RpcClient } from "./RpcClient.js";
+import { RpcClient, RpcConnectionHolder } from "./RpcClient.js";
 
 // ────────────────────────────────────────────────────────────
 // Types
@@ -24,9 +24,11 @@ interface CommandResult {
 // ────────────────────────────────────────────────────────────
 
 export class WorkspaceTerminalProvider implements vscode.TerminalProfileProvider {
+  // Registered once at activation — the connection holder is read when a
+  // terminal profile is requested, so connect/reconnect can swap the RPC
+  // client without re-registering the provider (which throws).
   constructor(
-    private rpc: RpcClient,
-    private workspaceRoot: string,
+    private connection: RpcConnectionHolder,
   ) {}
 
   provideTerminalProfile(
@@ -34,7 +36,7 @@ export class WorkspaceTerminalProvider implements vscode.TerminalProfileProvider
   ): vscode.ProviderResult<vscode.TerminalProfile> {
     return new vscode.TerminalProfile({
       name: "Workspace Remote",
-      pty: new WorkspacePseudoterminal(this.rpc, this.workspaceRoot),
+      pty: new WorkspacePseudoterminal(this.connection.rpc, this.connection.workspaceRoot),
       iconPath: new vscode.ThemeIcon("remote"),
     });
   }
@@ -118,10 +120,17 @@ class WorkspacePseudoterminal implements vscode.Pseudoterminal {
         this.historyIndex = -1;
         this._replaceInput("");
       }
-    } else if (data.length === 1 && data >= " ") {
-      // Printable character
-      this.inputBuffer += data;
-      this.writeEmitter.fire(data);
+    } else {
+      // Printable input — single keystrokes or pasted chunks (multi-character).
+      // Strip ANSI escape sequences and control characters so pastes (and
+      // unhandled cursor keys) don't corrupt the input buffer.
+      const printable = data
+        .replace(/\x1b\[[0-9;?]*[A-Za-z~]/g, "")
+        .replace(/[\x00-\x1f\x7f]/g, "");
+      if (printable.length > 0) {
+        this.inputBuffer += printable;
+        this.writeEmitter.fire(printable);
+      }
     }
   }
 

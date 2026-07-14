@@ -25,8 +25,9 @@ export function startHealthServer(agent: AgentClient, port: number = DEFAULT_POR
         timestamp: new Date().toISOString(),
       };
 
-      // Always 200 — the service is alive and reconnecting is a normal transient state.
-      // Docker healthcheck would otherwise restart the container while it waits for the backend.
+      // Always 200 — the service is alive, and disconnected states auto-reconnect
+      // with backoff (see AgentClient close handler). A non-200 here would make
+      // the Docker healthcheck restart the container while it waits for the backend.
       const statusCode = 200;
       res.writeHead(statusCode, { "Content-Type": "application/json" });
       res.end(JSON.stringify(payload));

@@ -9,6 +9,8 @@ const IPC_CHANNELS = {
   AGENT_RESTART: "agent:restart",
   AGENT_STATUS: "agent:status",
   OPEN_FOLDER_DIALOG: "dialog:open-folder",
+  LOG_ENTRY: "log:entry",
+  STATUS_CHANGED: "agent:status-changed",
   LOG_GET_ALL: "log:get-all",
   GET_AUTO_LAUNCH: "autolaunch:get",
   SET_AUTO_LAUNCH: "autolaunch:set",
@@ -34,4 +36,11 @@ contextBridge.exposeInMainWorld("prismAgent", {
     ipcRenderer.invoke(IPC_CHANNELS.WSL_DETECT_DISTROS),
   checkWslNode: (distroName) =>
     ipcRenderer.invoke(IPC_CHANNELS.WSL_CHECK_NODE, distroName),
+  // Push-based updates from the main process (replaces the old 5s polling)
+  onStatusChanged: (callback) => {
+    ipcRenderer.on(IPC_CHANNELS.STATUS_CHANGED, (_event, status) => callback(status));
+  },
+  onLogEntry: (callback) => {
+    ipcRenderer.on(IPC_CHANNELS.LOG_ENTRY, (_event, entry) => callback(entry));
+  },
 });

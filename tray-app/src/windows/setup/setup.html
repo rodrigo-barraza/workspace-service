@@ -358,6 +358,41 @@
 
     // ── Form Submission ──────────────────────────────────────
 
+    // ── Connection Outcome ───────────────────────────────────
+    // The wizard used to say "Connecting…" and close unconditionally — the
+    // user never learned whether it actually worked. Wait for the first
+    // definitive status before closing.
+
+    const SETUP_CONNECT_TIMEOUT_MS = 20000;
+    let resolveConnectionOutcome = null;
+
+    window.prismAgent.onStatusChanged((status) => {
+      if (!resolveConnectionOutcome) return;
+      if (status.connectionStatus === "connected" || status.connectionStatus === "auth-failed") {
+        resolveConnectionOutcome(status.connectionStatus);
+      }
+    });
+
+    function waitForConnectionOutcome() {
+      return new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          resolveConnectionOutcome = null;
+          resolve("timeout");
+        }, SETUP_CONNECT_TIMEOUT_MS);
+        resolveConnectionOutcome = (outcome) => {
+          clearTimeout(timeout);
+          resolveConnectionOutcome = null;
+          resolve(outcome);
+        };
+      });
+    }
+
+    function showSetupError(message) {
+      const footerText = document.querySelector(".footer-text");
+      footerText.textContent = message;
+      footerText.style.color = "oklch(0.7 0.18 30)";
+    }
+
     setupForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       connectButton.disabled = true;
@@ -380,12 +415,25 @@
         configuration.wslLinuxPaths = linuxPath ? [linuxPath] : [windowsPath];
       }
 
+      const outcomePromise = waitForConnectionOutcome();
       await window.prismAgent.completeSetup(configuration);
+      const outcome = await outcomePromise;
 
-      // Register OS-level login item so the app survives reboots
-      await window.prismAgent.setAutoLaunch(true);
+      if (outcome === "connected") {
+        // Register OS-level login item so the app survives reboots
+        await window.prismAgent.setAutoLaunch(true);
+        connectButton.textContent = "Connected!";
+        setTimeout(() => window.close(), 800);
+        return;
+      }
 
-      window.close();
+      connectButton.disabled = false;
+      connectButton.textContent = "Connect";
+      if (outcome === "auth-failed") {
+        showSetupError("Authentication failed — check your API secret and try again.");
+      } else {
+        showSetupError("Could not reach the backend — it will keep retrying in the background. Check the URL, or close this window to let it retry.");
+      }
     });
   </script>
 </body>

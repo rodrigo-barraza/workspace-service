@@ -17,6 +17,7 @@ interface GitResult {
   stderr?: string;
   error?: string;
   exitCode?: number | null;
+  truncated?: boolean;
 }
 
 async function runGit(args: string[], cwd: string): Promise<GitResult> {
@@ -25,6 +26,7 @@ async function runGit(args: string[], cwd: string): Promise<GitResult> {
     const stderrChunks: Buffer[] = [];
     let stdoutLen = 0;
     let stderrLen = 0;
+    let truncated = false;
     let settled = false;
 
     const child = spawn("git", args, {
@@ -42,10 +44,13 @@ async function runGit(args: string[], cwd: string): Promise<GitResult> {
     child.stdin.end();
 
     child.stdout.on("data", (chunk: Buffer) => {
-      if (stdoutLen < MAX_OUTPUT_BYTES) {
-        stdoutChunks.push(chunk);
-        stdoutLen += chunk.length;
+      if (stdoutLen >= MAX_OUTPUT_BYTES) {
+        truncated = true;
+        return;
       }
+      stdoutChunks.push(chunk);
+      stdoutLen += chunk.length;
+      if (stdoutLen > MAX_OUTPUT_BYTES) truncated = true;
     });
 
     child.stderr.on("data", (chunk: Buffer) => {
@@ -76,7 +81,13 @@ async function runGit(args: string[], cwd: string): Promise<GitResult> {
         return;
       }
 
-      resolve_({ stdout, stderr: stderr.trim() });
+      // A >512KB diff used to be silently cut — the caller (an LLM) would read
+      // partial output as complete. Mark it.
+      resolve_({
+        stdout: truncated ? stdout + "\n... [output truncated]" : stdout,
+        stderr: stderr.trim(),
+        ...(truncated && { truncated }),
+      });
     });
 
     child.on("error", (processError: Error) => {
@@ -190,6 +201,7 @@ export class GitHandler {
       hasChanges,
       additions,
       deletions,
+      ...(result.truncated && { truncated: true }),
       diff: hasChanges ? diff : "(no changes)",
     };
   }

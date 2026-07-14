@@ -91,13 +91,57 @@ describe("validateWorkspacePath", () => {
     expect(result.resolved).toBe(workspaceRoot);
   });
 
-  it("should resolve absolute paths directly", async () => {
+  it("should resolve in-root absolute paths directly", async () => {
     const { validateWorkspacePath } = await import("../src/utils.ts");
 
-    const result = validateWorkspacePath("/home/rodrigo/development", ["/some/root"]);
+    const result = validateWorkspacePath("/some/root/project/file.ts", ["/some/root"]);
 
     expect(result.safe).toBe(true);
-    expect(result.resolved).toBe("/home/rodrigo/development");
+    expect(result.resolved).toBe("/some/root/project/file.ts");
+  });
+
+  it("should reject out-of-root absolute paths when containment is on (default outside Docker)", async () => {
+    const { validateWorkspacePath, isContainmentEnabled } = await import("../src/utils.ts");
+
+    expect(isContainmentEnabled()).toBe(true);
+    const result = validateWorkspacePath("/home/rodrigo/.ssh/id_rsa", ["/some/root"]);
+    expect(result.safe).toBe(false);
+    expect(result.error).toContain("outside the workspace");
+  });
+
+  it("should reject ../ traversal that escapes the roots", async () => {
+    const { validateWorkspacePath } = await import("../src/utils.ts");
+
+    const result = validateWorkspacePath("../../etc/passwd", ["/some/root"]);
+    expect(result.safe).toBe(false);
+  });
+
+  it("should not treat a sibling directory with a shared prefix as contained", async () => {
+    const { validateWorkspacePath } = await import("../src/utils.ts");
+
+    const result = validateWorkspacePath("/some/root-evil/x", ["/some/root"]);
+    expect(result.safe).toBe(false);
+  });
+
+  it("should allow any absolute path when WORKSPACE_CONTAINMENT=off", async () => {
+    process.env.WORKSPACE_CONTAINMENT = "off";
+    try {
+      const { validateWorkspacePath } = await import("../src/utils.ts");
+
+      const result = validateWorkspacePath("/home/rodrigo/development", ["/some/root"]);
+      expect(result.safe).toBe(true);
+      expect(result.resolved).toBe("/home/rodrigo/development");
+    } finally {
+      delete process.env.WORKSPACE_CONTAINMENT;
+    }
+  });
+
+  it("should honor any of multiple roots for containment", async () => {
+    const { validateWorkspacePath } = await import("../src/utils.ts");
+
+    const roots = ["/root/a", "/root/b"];
+    expect(validateWorkspacePath("/root/b/file.ts", roots).safe).toBe(true);
+    expect(validateWorkspacePath("/root/c/file.ts", roots).safe).toBe(false);
   });
 
   it("should resolve relative paths against roots[0]", async () => {

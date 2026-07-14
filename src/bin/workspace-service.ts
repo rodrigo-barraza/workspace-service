@@ -74,25 +74,31 @@ if (!backendUrl.includes("/ws/agent")) {
   backendUrl = backendUrl.replace(/\/+$/, "") + "/ws/agent";
 }
 
-// Resolve auth secret: Settings page (MongoDB) → CLI flag
+// Resolve auth secret: explicit CLI flag wins; otherwise Settings page (MongoDB)
 let secret = cliOptions.secret || "";
-try {
-  const { connectDatabase, disconnectDatabase } = await import("@rodrigo-barraza/utilities-library/mongo");
-  const mongoUri = process.env.MONGO_URI;
-  if (mongoUri) {
-    const database = await connectDatabase(mongoUri, "prism");
-    const settingsDocument = await database
-      .collection("settings")
-      .findOne({ _key: "global" });
-    const settingsData = (settingsDocument?.data ?? {}) as Record<string, Record<string, unknown>>;
-    const workspaceSecret = settingsData?.workspace?.agentSecret;
-    if (workspaceSecret && typeof workspaceSecret === "string" && workspaceSecret.trim()) {
-      secret = workspaceSecret.trim();
+if (!secret) {
+  try {
+    const { connectDatabase, disconnectDatabase } = await import("@rodrigo-barraza/utilities-library/mongo");
+    const mongoUri = process.env.MONGO_URI;
+    if (mongoUri) {
+      const database = await connectDatabase(mongoUri, "prism");
+      const settingsDocument = await database
+        .collection("settings")
+        .findOne({ _key: "global" });
+      const settingsData = (settingsDocument?.data ?? {}) as Record<string, Record<string, unknown>>;
+      const workspaceSecret = settingsData?.workspace?.agentSecret;
+      if (workspaceSecret && typeof workspaceSecret === "string" && workspaceSecret.trim()) {
+        secret = workspaceSecret.trim();
+      }
+      await disconnectDatabase();
     }
-    await disconnectDatabase();
+  } catch (error: unknown) {
+    // A silent failure here used to mean: connect secretless → 401 → give up.
+    // Surface it so a mistyped MONGO_URI or DB outage is diagnosable.
+    logger.warn(
+      `Could not load secret from settings DB — continuing without it: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
-} catch {
-  // DB unavailable — connect without auth
 }
 const reconnectInterval = parseInt(cliOptions.reconnectInterval, 10) || 5000;
 const healthPort = parseInt(cliOptions.healthPort, 10) || 5605;
@@ -118,12 +124,16 @@ const agent = new AgentClient({
 agent.connect();
 
 // ── Start health server ────────────────────────────────────────
-startHealthServer(agent, healthPort);
+const healthServer = startHealthServer(agent, healthPort);
 
 // ── Graceful shutdown ──────────────────────────────────────────
+let shuttingDown = false;
 function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
   logger.info(`Received ${signal}, shutting down…`);
   agent.disconnect();
+  healthServer.close();
   // Give the deregister message time to send
   setTimeout(() => process.exit(0), 500);
 }

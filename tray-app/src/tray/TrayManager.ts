@@ -25,13 +25,21 @@ const STATUS_ICONS: Record<AgentConnectionStatus, string> = {
   connected: "tray-connected.png",
   disconnected: "tray-disconnected.png",
   connecting: "tray-connecting.png",
+  "auth-failed": "tray-disconnected.png",
 };
 
 const STATUS_LABELS: Record<AgentConnectionStatus, string> = {
   connected: "Connected",
   disconnected: "Disconnected",
   connecting: "Connecting…",
+  "auth-failed": "Auth failed — check API secret",
 };
+
+// Notification debounce: a flapping network used to produce a notification
+// storm ("Connected!" on every successful reconnect). Only notify when the
+// state change is meaningful to a human.
+const RECONNECT_NOTIFY_THRESHOLD_MS = 60_000;
+const DISCONNECT_NOTIFY_DELAY_MS = 10_000;
 
 let tray: Tray | null = null;
 let settingsWindow: BrowserWindow | null = null;
@@ -155,7 +163,7 @@ function showNotification(title: string, body: string): void {
   }
 }
 
-function openSettingsWindow(): void {
+export function openSettingsWindow(): void {
   if (settingsWindow) {
     settingsWindow.focus();
     return;
@@ -215,14 +223,38 @@ export function initializeTray(): void {
   tray.setToolTip("Prism Workspace — Disconnected");
   tray.setContextMenu(buildContextMenu());
 
+  let hasNotifiedConnected = false;
+  let disconnectedSince: number | null = null;
+  let pendingDisconnectNotification: ReturnType<typeof setTimeout> | null = null;
+
   agentProcess.on("status-changed", (status: AgentConnectionStatus) => {
     const previousStatus = currentStatus;
     updateTrayIcon(status);
 
     if (status === "connected") {
-      showNotification("Prism Workspace", "Connected successfully");
-    } else if (status === "disconnected" && previousStatus === "connected") {
-      showNotification("Prism Workspace", "Disconnected");
+      if (pendingDisconnectNotification) {
+        clearTimeout(pendingDisconnectNotification);
+        pendingDisconnectNotification = null;
+      }
+      const wasDownLongEnough =
+        disconnectedSince !== null && Date.now() - disconnectedSince > RECONNECT_NOTIFY_THRESHOLD_MS;
+      if (!hasNotifiedConnected || wasDownLongEnough) {
+        showNotification("Prism Workspace", "Connected successfully");
+      }
+      hasNotifiedConnected = true;
+      disconnectedSince = null;
+    } else if (status === "auth-failed") {
+      showNotification("Prism Workspace", "Authentication failed — check your API secret in Settings");
+    } else if (previousStatus === "connected") {
+      // Only notify if the outage sticks — brief blips auto-reconnect silently
+      disconnectedSince = Date.now();
+      if (pendingDisconnectNotification) clearTimeout(pendingDisconnectNotification);
+      pendingDisconnectNotification = setTimeout(() => {
+        pendingDisconnectNotification = null;
+        if (currentStatus !== "connected") {
+          showNotification("Prism Workspace", "Disconnected — reconnecting…");
+        }
+      }, DISCONNECT_NOTIFY_DELAY_MS);
     }
   });
 

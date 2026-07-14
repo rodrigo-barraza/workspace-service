@@ -61,7 +61,7 @@
         "workspaceRemote.apiSecret": {
           "type": "string",
           "default": "",
-          "description": "API secret for authentication"
+          "description": "DEPRECATED: the API secret is now stored securely in VS Code SecretStorage. This setting is only read as a legacy fallback — do not add new secrets here."
         }
       }
     },
@@ -78,7 +78,7 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts",
-    "package": "npx -y @vscode/vsce package --no-dependencies",
+    "package": "npx -y @vscode/vsce package",
     "vscode:prepublish": "npm run compile"
   },
   "devDependencies": {

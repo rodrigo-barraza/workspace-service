@@ -115,6 +115,10 @@ function getLastSpawnArguments(): string[] {
   return mockSpawn.mock.calls[mockSpawn.mock.calls.length - 1][1] as string[];
 }
 
+function getLastSpawnOptions(): { env?: Record<string, string> } {
+  return mockSpawn.mock.calls[mockSpawn.mock.calls.length - 1][2] as { env?: Record<string, string> };
+}
+
 function getLastForkEnv(): Record<string, string> {
   const lastCall = mockFork.mock.calls[mockFork.mock.calls.length - 1];
   return lastCall[2].env;
@@ -230,8 +234,40 @@ describe("AgentProcess", () => {
       const spawnArguments = getLastSpawnArguments();
 
       expect(spawnArguments).toContain("env");
-      expect(spawnArguments).toContain("AGENT_SECRET=test-secret");
       expect(spawnArguments).toContain("AGENT_ROOTS=/home/rodrigo/development");
+    });
+
+    it("should NEVER put the secret in argv (visible to `ps` and the diagnostic log) — WSLENV carries it", () => {
+      const agent = new AgentProcess();
+      agent.start(createWslConfiguration({ secret: "super-secret-value" }));
+
+      const spawnArguments = getLastSpawnArguments();
+      expect(spawnArguments.join(" ")).not.toContain("super-secret-value");
+
+      const spawnOptions = getLastSpawnOptions();
+      expect(spawnOptions.env?.AGENT_SECRET).toBe("super-secret-value");
+      expect(spawnOptions.env?.WSLENV).toContain("AGENT_SECRET/u");
+    });
+
+    it("should preserve an existing WSLENV value when appending AGENT_SECRET", () => {
+      process.env.WSLENV = "EXISTING_VAR/p";
+      try {
+        const agent = new AgentProcess();
+        agent.start(createWslConfiguration({ secret: "s" }));
+        expect(getLastSpawnOptions().env?.WSLENV).toBe("EXISTING_VAR/p:AGENT_SECRET/u");
+      } finally {
+        delete process.env.WSLENV;
+      }
+    });
+
+    it("should not leak the secret into the diagnostic spawn log", () => {
+      const agent = new AgentProcess();
+      const logs = collectLogs(agent);
+      agent.start(createWslConfiguration({ secret: "super-secret-value" }));
+
+      for (const entry of logs) {
+        expect(entry.message).not.toContain("super-secret-value");
+      }
     });
 
     it("should handle special characters in agent name (spaces, quotes, bangs)", () => {
@@ -399,6 +435,22 @@ describe("AgentProcess", () => {
       expect(agent.getStatus().reconnectAttempts).toBe(3);
     });
 
+    it("should parse @prism:-prefixed protocol lines from stdout in WSL mode", () => {
+      const agent = new AgentProcess();
+      agent.start(createWslConfiguration());
+
+      const childProcess = getLastChildProcess();
+      childProcess.stdout.write('@prism:{"type":"connected","data":{"agentId":"wsl-789"}}\n');
+
+      return new Promise<void>((resolve) => {
+        setTimeout(() => {
+          expect(agent.getStatus().connectionStatus).toBe("connected");
+          expect(agent.getStatus().agentId).toBe("wsl-789");
+          resolve();
+        }, 10);
+      });
+    });
+
     it("should parse JSON lines from stdout in WSL mode as IPC messages", () => {
       const agent = new AgentProcess();
       agent.start(createWslConfiguration());
@@ -558,6 +610,107 @@ describe("AgentProcess", () => {
       expect(writeSpy).toHaveBeenCalledWith(
         JSON.stringify({ type: "shutdown" }) + "\n",
       );
+    });
+  });
+
+  // ── Lifecycle Race Regression (generation guard) ─────────────
+  //
+  // The original implementation let a dying child's late exit event null
+  // this.childProcess and emit "disconnected" AFTER a new child had been
+  // started — the tray showed Disconnected while an agent was connected,
+  // "Connect" re-enabled, and clicking it spawned a duplicate agent.
+
+  describe("restart race regression", () => {
+    it("late exit from a replaced child must not clobber the new child's state", async () => {
+      const agent = new AgentProcess();
+      agent.start(createConfiguration());
+      const firstChild = getLastChildProcess();
+
+      agent.start(createConfiguration());
+      const secondChild = getLastChildProcess();
+      expect(secondChild).not.toBe(firstChild);
+
+      // New child connects
+      secondChild.emit("message", { type: "connected", data: { agentId: "new-agent" } });
+      expect(agent.getStatus().connectionStatus).toBe("connected");
+
+      // Old child finally exits (up to 3s later in reality)
+      firstChild.emit("exit", 0);
+
+      // The new child must be unaffected
+      expect(agent.isRunning()).toBe(true);
+      expect(agent.getStatus().connectionStatus).toBe("connected");
+      expect(agent.getStatus().agentId).toBe("new-agent");
+    });
+
+    it("late IPC messages from a replaced child must be ignored", () => {
+      const agent = new AgentProcess();
+      agent.start(createConfiguration());
+      const firstChild = getLastChildProcess();
+
+      agent.start(createConfiguration());
+      const secondChild = getLastChildProcess();
+      secondChild.emit("message", { type: "connected", data: { agentId: "new-agent" } });
+
+      // Stale child reports a disconnect — must not change status
+      firstChild.emit("message", { type: "disconnected", data: { code: 1006 } });
+      expect(agent.getStatus().connectionStatus).toBe("connected");
+    });
+
+    it("the stop() kill timer must target the captured child, never a newer one", () => {
+      vi.useFakeTimers();
+      try {
+        const agent = new AgentProcess();
+        agent.start(createConfiguration());
+        const firstChild = getLastChildProcess();
+
+        void agent.stop();
+        agent.start(createConfiguration());
+        const secondChild = getLastChildProcess();
+
+        // Old child never exits gracefully → 3s SIGKILL fires
+        vi.advanceTimersByTime(3100);
+
+        expect(firstChild.kill).toHaveBeenCalledWith("SIGKILL");
+        expect(secondChild.kill).not.toHaveBeenCalled();
+        expect(agent.isRunning()).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("stop() resolves once the child exits and reports processRunning=false", async () => {
+      const agent = new AgentProcess();
+      agent.start(createConfiguration());
+      const child = getLastChildProcess();
+
+      const stopPromise = agent.stop();
+      expect(agent.isRunning()).toBe(false);
+      expect(agent.getStatus().processRunning).toBe(false);
+
+      child.emit("exit", 0);
+      await stopPromise;
+    });
+
+    it("getStatus().processRunning stays true while the agent is merely reconnecting", () => {
+      const agent = new AgentProcess();
+      agent.start(createConfiguration());
+      const child = getLastChildProcess();
+
+      child.emit("message", { type: "connected", data: { agentId: "a" } });
+      child.emit("message", { type: "reconnecting", data: { attempt: 1 } });
+
+      expect(agent.getStatus().connectionStatus).toBe("connecting");
+      expect(agent.getStatus().processRunning).toBe(true);
+    });
+
+    it("auth-failed message maps to the auth-failed status", () => {
+      const agent = new AgentProcess();
+      agent.start(createConfiguration());
+      const child = getLastChildProcess();
+
+      child.emit("message", { type: "auth-failed", data: { statusCode: 401 } });
+      expect(agent.getStatus().connectionStatus).toBe("auth-failed");
     });
   });
 });

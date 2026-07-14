@@ -259,6 +259,7 @@ curl -v \
 | `WORKSPACE_BACKEND` | WebSocket URL of the tools-service backend (auto-converts `http://` → `ws://`) |
 | `WORKSPACE_ROOTS` | Comma-separated workspace root directories to expose |
 | `WORKSPACE_SERVICE_SECRET` | API secret for authenticating with tools-service |
+| `WORKSPACE_CONTAINMENT` | `on`/`off` — restrict file/git/watch operations to the workspace roots. Defaults to **on** outside Docker (tray app, standalone, bare Node) and **off** inside Docker, where the container is the jail |
 | `DEBUG` | Set to `1` to enable debug logging |
 
 ## Protocol
@@ -295,10 +296,10 @@ Uses JSON-RPC 2.0 over WebSocket. The agent responds to the following RPC method
 
 ## Security
 
-- **Path sandbox**: All file operations are restricted to the registered workspace roots
-- **Command allowlist**: Only project-safe commands (`npm`, `git`, `eslint`, etc.) are permitted
-- **Blocked patterns**: `.env`, private keys, `node_modules/.git/objects` are always blocked
-- **Auth**: WebSocket connection authenticates with `x-api-secret` header
+- **Path containment**: On host installs (tray app, standalone binary, bare Node), file/git/watch operations are restricted to the registered workspace roots (`WORKSPACE_CONTAINMENT`, default on). Inside Docker the container itself is the jail and containment defaults to off.
+- **Command execution**: `command.run` is unrestricted by design — on Docker the container is the boundary; on host installs treat the backend as trusted (it can run shell commands as your user).
+- **Secret env stripping**: `command.run` children never inherit credential-shaped env vars (`MONGO_URI`, `*_SECRET`, `*_TOKEN`, `*_PASSWORD`, `*_API_KEY`, …)
+- **Auth**: WebSocket connection authenticates with `x-api-secret` header; a 401 latches with an explicit `auth-failed` state instead of retry-looping
 
 ## Scripts
 

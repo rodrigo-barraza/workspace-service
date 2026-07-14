@@ -166,10 +166,20 @@ upload_file() {
 
   info "Uploading ${file_name} (${file_size_megabytes} MB) as ${platform_key}..."
 
+  # Authenticate the upload when a secret is available — an unauthenticated
+  # PUT here would let anyone replace the installers users download.
+  local auth_args=()
+  if [ -n "${WORKSPACE_SERVICE_SECRET:-}" ]; then
+    auth_args=(-H "x-api-secret: ${WORKSPACE_SERVICE_SECRET}")
+  else
+    warn "WORKSPACE_SERVICE_SECRET not set — uploading without auth header"
+  fi
+
   local http_status
   http_status=$(curl -s -o /dev/null -w "%{http_code}" \
     -X PUT \
     -H "Content-Type: application/octet-stream" \
+    "${auth_args[@]}" \
     --data-binary "@${file_path}" \
     --max-time 300 \
     "${TOOLS_API_URL}/agents/upload/tray-app?platform=${platform_key}")

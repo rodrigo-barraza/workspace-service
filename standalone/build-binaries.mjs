@@ -49,17 +49,15 @@ const sentinelFuse = "NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2";
 if (currentPlatform === "linux") {
   const binaryDestination = join(targetDirectory, "workspace-agent-linux");
   console.log(`Building Linux binary: ${binaryDestination}`);
-  // Copy current node binary
-  const nodeBinaryPath = execSync("readlink -f $(which node)", { encoding: "utf-8" }).trim();
-  copyFileSync(nodeBinaryPath, binaryDestination);
+  // Copy the currently running node binary (resolves symlinks/version managers)
+  copyFileSync(process.execPath, binaryDestination);
   // Inject blob
   execSync(`npx postject "${binaryDestination}" NODE_SEA_BLOB "${preparationBlobPath}" --sentinel-fuse ${sentinelFuse}`, { stdio: "inherit" });
   console.log("Linux binary built successfully!");
 } else if (currentPlatform === "darwin") {
   const binaryDestination = join(targetDirectory, "workspace-agent-macos");
   console.log(`Building macOS binary: ${binaryDestination}`);
-  const nodeBinaryPath = execSync("which node", { encoding: "utf-8" }).trim();
-  copyFileSync(nodeBinaryPath, binaryDestination);
+  copyFileSync(process.execPath, binaryDestination);
   execSync(`npx postject "${binaryDestination}" NODE_SEA_BLOB "${preparationBlobPath}" --sentinel-fuse ${sentinelFuse}`, { stdio: "inherit" });
   // Resign binary on macOS
   try {
@@ -68,6 +66,17 @@ if (currentPlatform === "linux") {
     console.warn("Failed to codesign macOS binary (ignoring):", error.message);
   }
   console.log("macOS binary built successfully!");
+} else if (currentPlatform === "win32") {
+  const binaryDestination = join(targetDirectory, "workspace-agent-windows.exe");
+  console.log(`Building Windows binary: ${binaryDestination}`);
+  // Copy the currently running node.exe
+  copyFileSync(process.execPath, binaryDestination);
+  execSync(`npx postject "${binaryDestination}" NODE_SEA_BLOB "${preparationBlobPath}" --sentinel-fuse ${sentinelFuse}`, { stdio: "inherit" });
+  // No codesigning on Windows (would require a signing certificate)
+  console.log("Windows binary built successfully!");
+} else {
+  console.error(`Unsupported build platform: ${currentPlatform}. Supported platforms are linux, darwin, and win32.`);
+  process.exit(1);
 }
 
 // 6. Clean up temporary files

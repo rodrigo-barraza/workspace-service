@@ -28,6 +28,26 @@ import {
   WORKSPACE_SKIP_DIRECTORIES,
 } from "@rodrigo-barraza/utilities-library";
 
+// Cap for directoryTree — its siblings (listDirectory, project.summary) have
+// caps; without one, a wide directory at shallow depth yields an unbounded blob
+const MAX_TREE_ENTRIES = 1000;
+
+/**
+ * Atomic write: write to a temp file in the same directory, then rename over
+ * the target. A crash mid-write (container restart, SIGKILL) can no longer
+ * leave a truncated file behind.
+ */
+async function writeFileAtomic(targetPath: string, content: string): Promise<void> {
+  const temporaryPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
+  await writeFile(temporaryPath, content, "utf-8");
+  try {
+    await rename(temporaryPath, targetPath);
+  } catch (error) {
+    await unlink(temporaryPath).catch(() => {});
+    throw error;
+  }
+}
+
 export class FileHandler {
   roots: string[];
   constructor(roots: string[]) {
@@ -133,18 +153,21 @@ export class FileHandler {
     }
   }
 
-  async writeFile({ path: filePath, content, createDirs = true }: WriteFileParams) {
+  async writeFile({ path: filePath, content, contentBase64, createDirs = true }: WriteFileParams) {
     const validation = this.validatePath(filePath);
     if (!validation.safe) return { error: validation.error };
 
-    if (typeof content !== "string") {
-      return { error: "'content' must be a string" };
+    // Binary write path (additive): the VS Code FileSystemProvider coerces
+    // every write through UTF-8 without this, corrupting non-text files.
+    const isBinaryWrite = typeof contentBase64 === "string";
+    if (!isBinaryWrite && typeof content !== "string") {
+      return { error: "'content' must be a string (or provide 'contentBase64' for binary data)" };
     }
 
-    const bytes = Buffer.byteLength(content, "utf-8");
-    if (bytes > WORKSPACE_MAX_WRITE_BYTES) {
+    const buffer = isBinaryWrite ? Buffer.from(contentBase64, "base64") : Buffer.from(content!, "utf-8");
+    if (buffer.length > WORKSPACE_MAX_WRITE_BYTES) {
       return {
-        error: `Content is ${(bytes / 1024).toFixed(1)} KB — exceeds max write size of ${(WORKSPACE_MAX_WRITE_BYTES / 1024).toFixed(0)} KB.`,
+        error: `Content is ${(buffer.length / 1024).toFixed(1)} KB — exceeds max write size of ${(WORKSPACE_MAX_WRITE_BYTES / 1024).toFixed(0)} KB.`,
       };
     }
 
@@ -156,15 +179,22 @@ export class FileHandler {
       }
 
       const existed = existsSync(resolved);
-      await writeFile(resolved, content, "utf-8");
-      const lines = content.split("\n").length;
+      // Atomic: temp + rename, so a crash mid-write can't truncate the file
+      const temporaryPath = `${resolved}.${process.pid}.${Date.now()}.tmp`;
+      await writeFile(temporaryPath, buffer);
+      try {
+        await rename(temporaryPath, resolved);
+      } catch (renameError) {
+        await unlink(temporaryPath).catch(() => {});
+        throw renameError;
+      }
 
       return {
         filePath: resolved,
         created: !existed,
         overwritten: existed,
-        bytesWritten: bytes,
-        linesWritten: lines,
+        bytesWritten: buffer.length,
+        ...(isBinaryWrite ? { isBinary: true } : { linesWritten: content!.split("\n").length }),
       };
     } catch (error: unknown) {
       return { error: `Write failed: ${errorMessage(error)}` };
@@ -187,10 +217,15 @@ export class FileHandler {
     try {
       const content = await readFile(resolved, "utf-8");
 
+      // Advance by the full match length: `index + 1` counted overlapping
+      // occurrences ("aaa" contains "aa" twice) while split/join replaces
+      // non-overlapping ones — the counts must agree or single-match edits
+      // get spuriously rejected as ambiguous.
       let count = 0;
-      let index = -1;
-      while ((index = content.indexOf(oldString, index + 1)) !== -1) {
+      let index = content.indexOf(oldString);
+      while (index !== -1) {
         count++;
+        index = content.indexOf(oldString, index + oldString.length);
       }
 
       if (count === 0) {
@@ -216,7 +251,7 @@ export class FileHandler {
         updated = content.replace(oldString, newString);
       }
 
-      await writeFile(resolved, updated, "utf-8");
+      await writeFileAtomic(resolved, updated);
 
       const oldLines = oldString.split("\n").length;
       const newLines = newString.split("\n").length;
@@ -258,7 +293,7 @@ export class FileHandler {
         };
       }
 
-      await writeFile(resolved, patched, "utf-8");
+      await writeFileAtomic(resolved, patched);
 
       const oldLines = content.split("\n").length;
       const newLines = patched.split("\n").length;
@@ -553,6 +588,9 @@ export class FileHandler {
         return { error: `'${resolved}' is a file, not a directory.` };
       }
 
+      let totalEntries = 0;
+      let truncated = false;
+
       const buildTree = async (currentDirectory: string, currentDepth: number): Promise<TreeEntry[]> => {
         if (currentDepth > maxDepth) return [];
 
@@ -560,6 +598,10 @@ export class FileHandler {
         const treeEntries: TreeEntry[] = [];
 
         for (const directoryEntry of directoryEntries) {
+          if (totalEntries >= MAX_TREE_ENTRIES) {
+            truncated = true;
+            break;
+          }
           if (WORKSPACE_SKIP_DIRECTORIES.has(directoryEntry.name)) continue;
           if (directoryEntry.name.startsWith(".") && directoryEntry.name !== ".env.example") continue;
 
@@ -568,6 +610,7 @@ export class FileHandler {
           const pathValidation = this.validatePath(fullPath);
           if (!pathValidation.safe) continue;
 
+          totalEntries++;
           if (directoryEntry.isDirectory()) {
             const children = currentDepth < maxDepth
               ? await buildTree(fullPath, currentDepth + 1)
@@ -582,7 +625,7 @@ export class FileHandler {
       };
 
       const entries = await buildTree(resolved, 1);
-      return { entries };
+      return { entries, totalEntries, truncated };
     } catch (error: unknown) {
       return { error: `Directory tree fetch failed: ${errorMessage(error)}` };
     }
@@ -614,6 +657,14 @@ export class FileHandler {
 
       const results: GrepMatch[] = [];
       const fileMatches = new Set<string>();
+
+      // Real glob semantics for `includes` — the old suffix-only check made
+      // patterns like "src/**/*.ts" silently match nothing, which an LLM
+      // reads as "no results found" rather than "bad filter".
+      const includeMatchers = includes.map((glob: string) => {
+        const regex = globToRegex(glob);
+        return (name: string, relativePath: string) => regex.test(name) || regex.test(relativePath);
+      });
 
       const searchFile = async (filePath: string) => {
         if (results.length >= WORKSPACE_MAX_GREP_RESULTS) return;
@@ -659,12 +710,9 @@ export class FileHandler {
               if (entry.name === "node_modules" || entry.name === ".git") continue;
               await walkDir(fullPath);
             } else {
-              if (includes.length > 0) {
-                const name = entry.name;
-                const matched = includes.some((glob: string) => {
-                  if (glob.startsWith("*.")) return name.endsWith(glob.slice(1));
-                  return name === glob;
-                });
+              if (includeMatchers.length > 0) {
+                const relativePath = relative(resolved, fullPath);
+                const matched = includeMatchers.some((matches) => matches(entry.name, relativePath));
                 if (!matched) continue;
               }
               await searchFile(fullPath);

@@ -5,10 +5,5 @@ import globals from "globals";
 import { createServiceEslintConfig } from "@rodrigo-barraza/utilities-library/eslint";
 
 export default [
-  ...createServiceEslintConfig({ js, tseslint, prettierConfig, globals }),
-  {
-    rules: {
-      "no-constant-condition": "off",
-    },
-  },
+  ...createServiceEslintConfig({ javascript: js, typescriptEslint: tseslint, prettierConfig, globals }),
 ];

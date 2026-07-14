@@ -43,7 +43,7 @@ vi.mock("ws", () => ({
   WebSocket: MockWebSocket,
 }));
 
-vi.mock("../logger.ts", () => ({
+vi.mock("../src/logger.ts", () => ({
   default: {
     info: vi.fn(),
     success: vi.fn(),
@@ -53,28 +53,29 @@ vi.mock("../logger.ts", () => ({
   },
 }));
 
-vi.mock("../handlers/FileHandler.ts", () => ({
-  FileHandler: vi.fn().mockImplementation(() => ({})),
+vi.mock("../src/handlers/FileHandler.ts", () => ({
+  FileHandler: vi.fn(function () { return {}; }),
 }));
 
-vi.mock("../handlers/GitHandler.ts", () => ({
-  GitHandler: vi.fn().mockImplementation(() => ({})),
+vi.mock("../src/handlers/GitHandler.ts", () => ({
+  GitHandler: vi.fn(function () { return {}; }),
 }));
 
-vi.mock("../handlers/CommandHandler.ts", () => ({
-  CommandHandler: vi.fn().mockImplementation(() => ({})),
+vi.mock("../src/handlers/CommandHandler.ts", () => ({
+  CommandHandler: vi.fn(function () { return {}; }),
 }));
 
-vi.mock("../handlers/ProjectHandler.ts", () => ({
-  ProjectHandler: vi.fn().mockImplementation(() => ({})),
+vi.mock("../src/handlers/ProjectHandler.ts", () => ({
+  ProjectHandler: vi.fn(function () { return {}; }),
 }));
 
-vi.mock("../utils.ts", () => ({
+vi.mock("../src/utils.ts", () => ({
   WORKSPACE_VIRTUAL_ROOT: "/",
   WORKSPACE_ACTUAL_ROOT: "/",
   isVirtualized: false,
   devirtualizeRequestParams: vi.fn((params: unknown) => params),
   virtualizeResponsePaths: vi.fn((result: unknown) => result),
+  validateWorkspacePath: vi.fn((inputPath: string) => ({ safe: true, resolved: inputPath })),
 }));
 
 vi.mock("@rodrigo-barraza/utilities-library", () => ({
@@ -84,12 +85,11 @@ vi.mock("@rodrigo-barraza/utilities-library", () => ({
 
 // ── Test Helpers ────────────────────────────────────────────
 
-function createAgentClient(overrides: Record<string, unknown> = {}) {
-  // Use require-style import to get the mocked version
-  const { AgentClient } = require("../AgentClient.ts") as {
-    AgentClient: new (options: Record<string, unknown>) => AgentClientInstance;
-  };
+// Dynamic import is NOT hoisted (unlike a static import), so it runs after
+// MockWebSocket is initialized — the vi.mock factories above reference it.
+const { AgentClient } = await import("../src/AgentClient.ts");
 
+function createAgentClient(overrides: Record<string, unknown> = {}) {
   return new AgentClient({
     backendUrl: "wss://api.tools.rod.dev/ws/agent",
     roots: ["/home/rodrigo/development"],

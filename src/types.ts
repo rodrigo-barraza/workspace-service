@@ -4,7 +4,8 @@
 
 export interface JsonRpcRequest {
   jsonrpc: "2.0";
-  id?: string;
+  // JSON-RPC 2.0 allows string OR number ids — never assume string methods on it
+  id?: string | number;
   method?: string;
   params?: Record<string, unknown>;
   result?: unknown;
@@ -18,7 +19,7 @@ export interface JsonRpcError {
 
 export interface JsonRpcResponse {
   jsonrpc: "2.0";
-  id: string;
+  id: string | number;
   result?: unknown;
   error?: JsonRpcError;
 }
@@ -49,7 +50,9 @@ export interface ReadFileParams {
 
 export interface WriteFileParams {
   path: string;
-  content: string;
+  content?: string;
+  // Base64-encoded binary payload — takes precedence over `content`
+  contentBase64?: string;
   createDirs?: boolean;
 }
 

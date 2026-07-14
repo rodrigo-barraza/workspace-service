@@ -15,18 +15,22 @@
 //
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { createInterface } from "node:readline";
 
 const isIpcAvailable = typeof process.send === "function";
 
+// Stdio mode frames protocol messages with a prefix so stray shell output
+// (bash -i warnings, .bashrc echo) can't be confused with control messages.
+// Must match STDIO_PROTOCOL_PREFIX in AgentProcess.ts.
+const STDIO_PROTOCOL_PREFIX = "@prism:";
+
 function sendMessage(message) {
   if (isIpcAvailable) {
     process.send(message);
   } else {
-    process.stdout.write(JSON.stringify(message) + "\n");
+    process.stdout.write(STDIO_PROTOCOL_PREFIX + JSON.stringify(message) + "\n");
   }
 }
 
@@ -72,6 +76,10 @@ agent.on("reconnecting", (detail) => {
 
 agent.on("error", (detail) => {
   sendMessage({ type: "error", data: detail });
+});
+
+agent.on("auth-failed", (detail) => {
+  sendMessage({ type: "auth-failed", data: detail });
 });
 
 agent.connect();

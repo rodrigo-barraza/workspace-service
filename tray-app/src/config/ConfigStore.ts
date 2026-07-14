@@ -74,8 +74,11 @@ export function setConfiguration(partialConfiguration: Partial<AgentConfiguratio
 
 export function hasValidConfiguration(): boolean {
   const configuration = getConfiguration();
+  // Secret is required: connecting without one guarantees a 401 loop that
+  // used to present as a permanently "Disconnected" tray with no explanation
   return !!(
     configuration.backendUrl &&
+    configuration.secret &&
     configuration.workspaceRoots.length > 0
   );
 }

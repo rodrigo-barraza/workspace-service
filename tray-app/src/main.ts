@@ -3,7 +3,7 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 import { app, ipcMain, dialog, BrowserWindow } from "electron";
-import { initializeTray, openSetupWindow } from "./tray/TrayManager.js";
+import { initializeTray, openSetupWindow, openSettingsWindow } from "./tray/TrayManager.js";
 import { agentProcess } from "./agent/AgentProcess.js";
 import {
   getConfiguration,
@@ -21,7 +21,9 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.on("second-instance", () => {
-  // If a second instance is launched, do nothing — tray is already running
+  // Double-launching the installed app should give feedback, not silence —
+  // surface the settings window of the already-running instance.
+  openSettingsWindow();
 });
 
 // Prevent the app from quitting when all windows are closed (tray-only mode)
@@ -32,6 +34,21 @@ app.on("window-all-closed", () => {
 // ────────────────────────────────────────────────────────────
 // IPC Handlers
 // ────────────────────────────────────────────────────────────
+
+// Push status/log updates to any open window — the renderers used to poll
+// every 5s and require a manual "Refresh" for logs.
+function broadcastAgentEvents(): void {
+  agentProcess.on("status-changed", () => {
+    for (const openWindow of BrowserWindow.getAllWindows()) {
+      openWindow.webContents.send(IPC_CHANNELS.STATUS_CHANGED, agentProcess.getStatus());
+    }
+  });
+  agentProcess.on("log", (entry) => {
+    for (const openWindow of BrowserWindow.getAllWindows()) {
+      openWindow.webContents.send(IPC_CHANNELS.LOG_ENTRY, entry);
+    }
+  });
+}
 
 function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.GET_CONFIG, () => {
@@ -55,13 +72,13 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.AGENT_STOP, () => {
-    agentProcess.stop();
+    void agentProcess.stop();
     return agentProcess.getStatus();
   });
 
-  ipcMain.handle(IPC_CHANNELS.AGENT_RESTART, async () => {
-    agentProcess.stop();
-    await new Promise((resolve) => setTimeout(resolve, 500));
+  ipcMain.handle(IPC_CHANNELS.AGENT_RESTART, () => {
+    // start() safely detaches any running child itself — the old 500ms sleep
+    // raced the previous child's 3s kill timer and could spawn duplicates
     const configuration = getConfiguration();
     agentProcess.start(configuration);
     return agentProcess.getStatus();
@@ -131,6 +148,7 @@ app.whenReady().then(async () => {
   }
 
   registerIpcHandlers();
+  broadcastAgentEvents();
   initializeTray();
 
   // Reconcile OS-level login item with stored preference on every startup.
@@ -166,6 +184,14 @@ app.whenReady().then(async () => {
   }
 });
 
-app.on("before-quit", () => {
-  agentProcess.stop();
+let quitInProgress = false;
+app.on("before-quit", (event) => {
+  // Wait for the child to actually exit — quitting immediately used to orphan
+  // the agent (especially the wsl.exe child, which doesn't die with Electron)
+  if (quitInProgress) return;
+  quitInProgress = true;
+  event.preventDefault();
+  void agentProcess.stop().finally(() => {
+    app.exit(0);
+  });
 });

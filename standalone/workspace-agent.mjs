@@ -17,7 +17,7 @@
 //
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, chmod } from "node:fs/promises";
 import { resolve, dirname, join } from "node:path";
 import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -62,8 +62,14 @@ function parseArgs() {
   for (let index = 0; index < args.length; index++) {
     if (args[index] === "--backend" || args[index] === "-b") { parsed.backend = args[++index]; }
     else if (args[index] === "--workspace" || args[index] === "-w") {
+      const workspaceFlagName = args[index];
       parsed.workspace = parsed.workspace || [];
+      const workspaceCountBeforeFlag = parsed.workspace.length;
       while (index + 1 < args.length && !args[index + 1].startsWith("-")) { parsed.workspace.push(args[++index]); }
+      if (parsed.workspace.length === workspaceCountBeforeFlag) {
+        logger.error(`The ${workspaceFlagName} flag requires at least one directory path, but the next token was another flag (or nothing). Example: ${workspaceFlagName} /path/to/project`);
+        process.exit(1);
+      }
     }
     else if (args[index] === "--secret" || args[index] === "-s") { parsed.secret = args[++index]; }
     else if (args[index] === "--name" || args[index] === "-n") { parsed.name = args[++index]; }
@@ -109,7 +115,11 @@ async function readPersistentConfiguration() {
 async function writePersistentConfiguration(configuration) {
   try {
     await mkdir(dirname(AGENT_CONFIG_FILE_PATH), { recursive: true });
-    await writeFile(AGENT_CONFIG_FILE_PATH, JSON.stringify(configuration, null, 2), "utf-8");
+    // The configuration contains a plaintext secret — restrict access to the owner.
+    await writeFile(AGENT_CONFIG_FILE_PATH, JSON.stringify(configuration, null, 2), { encoding: "utf-8", mode: 0o600 });
+    // The mode option only applies when the file is created, so tighten
+    // permissions explicitly in case the file already existed.
+    await chmod(AGENT_CONFIG_FILE_PATH, 0o600);
     logger.success(`Saved configuration to ${AGENT_CONFIG_FILE_PATH}`);
   } catch (error) {
     logger.warn(`Failed to save config file: ${error.message}`);
@@ -140,8 +150,10 @@ function selectDirectoryViaNativeDialog() {
         $folderBrowser.ShowNewFolderButton = $true
         if ($folderBrowser.ShowDialog() -eq "OK") { $folderBrowser.SelectedPath }
       `;
-      const sanitizedScript = powershellScript.replace(/\n/g, ";");
-      const pathResult = execSync(`powershell -NoProfile -Command "${sanitizedScript}"`, { encoding: "utf-8" }).trim();
+      // Encode as UTF-16LE base64 and use -EncodedCommand so the nested double
+      // quotes in the script survive cmd.exe argument parsing intact.
+      const encodedPowershellScript = Buffer.from(powershellScript, "utf16le").toString("base64");
+      const pathResult = execSync(`powershell -NoProfile -EncodedCommand ${encodedPowershellScript}`, { encoding: "utf-8" }).trim();
       return pathResult || null;
     } else if (currentPlatform === "darwin") {
       const appleScriptCommand = `POSIX path of (choose folder with prompt "Select workspace directory to sync with Prism:")`;
@@ -161,45 +173,60 @@ function selectDirectoryViaNativeDialog() {
   return null;
 }
 
-async function runInteractiveConfigurationWizard() {
-  logger.info("No configuration found. Starting setup wizard…");
+async function runInteractiveConfigurationWizard(existingConfiguration = {}) {
+  logger.info("Configuration is incomplete. Starting setup wizard for the missing fields…");
 
-  let backendUrlInput = await promptUserQuestion("Enter Prism Backend WebSocket URL (default: wss://api.tools.rod.dev): ");
+  let backendUrlInput = existingConfiguration.backend;
   if (!backendUrlInput) {
-    backendUrlInput = "wss://api.tools.rod.dev";
-  }
-
-  let secretInput = await promptUserQuestion("Enter your Prism API Access Token/Secret: ");
-  while (!secretInput) {
-    logger.warn("API Secret is required to connect to Prism.");
-    secretInput = await promptUserQuestion("Enter your Prism API Access Token/Secret: ");
-  }
-
-  logger.info("Opening folder selection dialog…");
-  let selectedWorkspaceFolder = selectDirectoryViaNativeDialog();
-
-  if (selectedWorkspaceFolder) {
-    logger.success(`Selected workspace directory: ${selectedWorkspaceFolder}`);
-  } else {
-    logger.info("No folder was selected from the dialog. Please enter the directory path manually.");
-    const defaultWorkspacePath = resolve(process.cwd());
-    const manualWorkspaceInput = await promptUserQuestion(`Enter local workspace directory path (default: ${defaultWorkspacePath}): `);
-    selectedWorkspaceFolder = manualWorkspaceInput ? resolve(manualWorkspaceInput) : defaultWorkspacePath;
-  }
-
-  while (!existsSync(selectedWorkspaceFolder) || !statSync(selectedWorkspaceFolder).isDirectory()) {
-    logger.error(`Workspace directory does not exist or is not a directory: ${selectedWorkspaceFolder}`);
-    const manualWorkspaceInput = await promptUserQuestion("Enter workspace directory path: ");
-    if (!manualWorkspaceInput) {
-      continue;
+    backendUrlInput = await promptUserQuestion("Enter Prism Backend WebSocket URL (default: wss://api.tools.rod.dev): ");
+    if (!backendUrlInput) {
+      backendUrlInput = "wss://api.tools.rod.dev";
     }
-    selectedWorkspaceFolder = resolve(manualWorkspaceInput);
   }
 
+  let secretInput = existingConfiguration.secret;
+  if (!secretInput) {
+    secretInput = await promptUserQuestion("Enter your Prism API Access Token/Secret: ");
+    while (!secretInput) {
+      logger.warn("API Secret is required to connect to Prism.");
+      secretInput = await promptUserQuestion("Enter your Prism API Access Token/Secret: ");
+    }
+  }
+
+  let workspaceFolders = Array.isArray(existingConfiguration.workspace)
+    ? existingConfiguration.workspace.filter(Boolean)
+    : [];
+  if (workspaceFolders.length === 0) {
+    logger.info("Opening folder selection dialog…");
+    let selectedWorkspaceFolder = selectDirectoryViaNativeDialog();
+
+    if (selectedWorkspaceFolder) {
+      logger.success(`Selected workspace directory: ${selectedWorkspaceFolder}`);
+    } else {
+      logger.info("No folder was selected from the dialog. Please enter the directory path manually.");
+      const defaultWorkspacePath = resolve(process.cwd());
+      const manualWorkspaceInput = await promptUserQuestion(`Enter local workspace directory path (default: ${defaultWorkspacePath}): `);
+      selectedWorkspaceFolder = manualWorkspaceInput ? resolve(manualWorkspaceInput) : defaultWorkspacePath;
+    }
+
+    while (!existsSync(selectedWorkspaceFolder) || !statSync(selectedWorkspaceFolder).isDirectory()) {
+      logger.error(`Workspace directory does not exist or is not a directory: ${selectedWorkspaceFolder}`);
+      const manualWorkspaceInput = await promptUserQuestion("Enter workspace directory path: ");
+      if (!manualWorkspaceInput) {
+        continue;
+      }
+      selectedWorkspaceFolder = resolve(manualWorkspaceInput);
+    }
+
+    workspaceFolders = [selectedWorkspaceFolder];
+  }
+
+  // Persist the effective merged configuration — the values that will
+  // actually be used to start the agent, not just the freshly-prompted ones.
   const configuration = {
     backend: backendUrlInput,
     secret: secretInput,
-    workspace: [selectedWorkspaceFolder],
+    workspace: workspaceFolders,
   };
 
   await writePersistentConfiguration(configuration);
@@ -232,10 +259,16 @@ async function main() {
 
     const isStillIncomplete = !backendUrl || workspacePaths.length === 0 || !secret;
     if (isStillIncomplete) {
-      const configuration = await runInteractiveConfigurationWizard();
-      backendUrl = backendUrl || configuration.backend;
-      workspacePaths = workspacePaths.length > 0 ? workspacePaths : (configuration.workspace || []);
-      secret = secret || configuration.secret;
+      // The wizard only prompts for fields that are still missing, and
+      // returns (and persists) the effective merged configuration.
+      const configuration = await runInteractiveConfigurationWizard({
+        backend: backendUrl,
+        secret,
+        workspace: workspacePaths,
+      });
+      backendUrl = configuration.backend;
+      workspacePaths = configuration.workspace || [];
+      secret = configuration.secret;
     }
   }
 
@@ -250,7 +283,8 @@ async function main() {
 
   if (backendUrl.startsWith("http://")) backendUrl = backendUrl.replace("http://", "ws://");
   else if (backendUrl.startsWith("https://")) backendUrl = backendUrl.replace("https://", "wss://");
-  if (!backendUrl.includes("/ws/agent")) backendUrl = backendUrl.replace(/\/+$/, "") + "/ws/agent";
+  backendUrl = backendUrl.replace(/\/+$/, "");
+  if (!backendUrl.endsWith("/ws/agent")) backendUrl = backendUrl + "/ws/agent";
 
   secret = secret || "";
   const agentName = cliOptions.name || hostname();

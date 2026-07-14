@@ -5,7 +5,7 @@
 // text search results to an output channel.
 
 import * as vscode from "vscode";
-import { RpcClient } from "./RpcClient.js";
+import { RpcConnectionHolder } from "./RpcClient.js";
 import { WorkspaceFileSystem } from "./WorkspaceFileSystem.js";
 
 // ────────────────────────────────────────────────────────────
@@ -44,11 +44,14 @@ interface GlobResult {
 /**
  * Register search-related commands.
  * Uses QuickPick for file search and OutputChannel for text search.
+ *
+ * Registered once at activation — the connection holder is read at command
+ * invocation time, so connect/reconnect can swap the RPC client without
+ * re-registering (which would throw "command already exists").
  */
 export function registerSearchCommands(
   context: vscode.ExtensionContext,
-  rpc: RpcClient,
-  workspaceRoot: string,
+  connection: RpcConnectionHolder,
 ): void {
   const outputChannel = vscode.window.createOutputChannel("Workspace Remote Search");
   context.subscriptions.push(outputChannel);
@@ -72,9 +75,9 @@ export function registerSearchCommands(
         debounceTimer = setTimeout(async () => {
           quickPick.busy = true;
           try {
-            const result = await rpc.call<GlobResult>("search.glob", {
+            const result = await connection.rpc.call<GlobResult>("search.glob", {
               pattern: `*${value}*`,
-              searchPath: workspaceRoot,
+              searchPath: connection.workspaceRoot,
             });
 
             if (result.matches) {
@@ -126,13 +129,13 @@ export function registerSearchCommands(
       outputChannel.show();
       outputChannel.appendLine(`🔍 Searching for: ${query}`);
       outputChannel.appendLine(`   Mode: ${isRegex === "Regex" ? "Regex" : "Literal"}`);
-      outputChannel.appendLine(`   Path: ${workspaceRoot}`);
+      outputChannel.appendLine(`   Path: ${connection.workspaceRoot}`);
       outputChannel.appendLine("─".repeat(60));
 
       try {
-        const result = await rpc.call<GrepResult>("search.grep", {
+        const result = await connection.rpc.call<GrepResult>("search.grep", {
           pattern: query,
-          searchPath: workspaceRoot,
+          searchPath: connection.workspaceRoot,
           isRegex: isRegex === "Regex",
           matchPerLine: true,
         }, 30_000);

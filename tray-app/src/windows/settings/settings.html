@@ -338,16 +338,24 @@
       await updateStatus();
     }
 
-    async function updateStatus() {
-      const status = await window.prismAgent.agentStatus();
+    function renderStatus(status) {
       statusDot.className = `status-dot ${status.connectionStatus}`;
-      const labelMap = { connected: "Connected", disconnected: "Disconnected", connecting: "Connecting…" };
+      const labelMap = {
+        connected: "Connected",
+        disconnected: "Disconnected",
+        connecting: "Connecting…",
+        "auth-failed": "Auth failed — check secret",
+      };
       statusLabel.textContent = labelMap[status.connectionStatus] || "Unknown";
 
-      const isDisconnected = status.connectionStatus === "disconnected";
-      const isConnecting = status.connectionStatus === "connecting";
+      // Disconnect acts on the PROCESS — a running agent that is mid-reconnect
+      // must still be disconnectable (keying this off connectionStatus made
+      // reconnecting agents unstoppable from this window)
+      disconnectButton.disabled = !status.processRunning;
+    }
 
-      disconnectButton.disabled = isDisconnected || isConnecting;
+    async function updateStatus() {
+      renderStatus(await window.prismAgent.agentStatus());
     }
 
     // ── WSL Auto-Detection ───────────────────────────────────
@@ -393,15 +401,15 @@
       };
 
       await window.prismAgent.setConfig(configurationUpdate);
-      await window.prismAgent.agentRestart();
+      const status = await window.prismAgent.agentRestart();
+      renderStatus(status);
       saveButton.textContent = "Save & Reconnect";
       saveButton.disabled = false;
-      setTimeout(updateStatus, 1000);
     });
 
     disconnectButton.addEventListener("click", async () => {
-      await window.prismAgent.agentStop();
-      setTimeout(updateStatus, 500);
+      const status = await window.prismAgent.agentStop();
+      renderStatus(status);
     });
 
     autoLaunchToggle.addEventListener("change", async () => {
@@ -440,7 +448,13 @@
 
     refreshLogsButton.addEventListener("click", refreshLogOutput);
 
-    setInterval(updateStatus, 5000);
+    // Push-based updates — no more 5s polling / manual log refresh
+    window.prismAgent.onStatusChanged((status) => renderStatus(status));
+    window.prismAgent.onLogEntry(() => {
+      const logsPanel = document.getElementById("tab-panel-logs");
+      if (logsPanel.classList.contains("is-visible-state")) refreshLogOutput();
+    });
+
     loadConfiguration();
   </script>
 </body>

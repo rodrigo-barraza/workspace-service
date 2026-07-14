@@ -18,6 +18,7 @@ import {
   WORKSPACE_ACTUAL_ROOT,
   devirtualizeRequestParams,
   virtualizeResponsePaths,
+  validateWorkspacePath,
 } from "./utils.ts";
 
 // ────────────────────────────────────────────────────────────
@@ -28,6 +29,9 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
 const HEARTBEAT_TIMEOUT_MS = 10_000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
 const WATCH_DEBOUNCE_MS = 300;
+// A steady stream of fs events resets the debounce forever — flush at least this often
+const WATCH_MAX_WAIT_MS = 2_000;
+const WATCH_MAX_BATCHED_EVENTS = 500;
 
 // ────────────────────────────────────────────────────────────
 // Agent Client
@@ -45,9 +49,19 @@ export class AgentClient extends EventEmitter {
   connected: boolean;
   intentionalClose: boolean;
   reconnectAttempts: number;
+  reconnectTimer: ReturnType<typeof setTimeout> | null;
   heartbeatTimer: ReturnType<typeof setInterval> | null;
   heartbeatTimeout: ReturnType<typeof setTimeout> | null;
-  watchers: Map<string, { watcher: import("node:fs").FSWatcher; debounceTimer: ReturnType<typeof setTimeout> | null }>;
+  watchers: Map<
+    string,
+    {
+      watcher: import("node:fs").FSWatcher;
+      debounceTimer: ReturnType<typeof setTimeout> | null;
+      maxWaitTimer: ReturnType<typeof setTimeout> | null;
+      pendingEvents: Array<{ eventType: string; filename: string | null }>;
+      droppedEvents: number;
+    }
+  >;
   fileHandler: FileHandler;
   gitHandler: GitHandler;
   commandHandler: CommandHandler;
@@ -71,6 +85,7 @@ export class AgentClient extends EventEmitter {
     this.connected = false;
     this.intentionalClose = false;
     this.reconnectAttempts = 0;
+    this.reconnectTimer = null;
     this.heartbeatTimer = null;
     this.heartbeatTimeout = null;
 
@@ -128,6 +143,24 @@ export class AgentClient extends EventEmitter {
   connect() {
     this.intentionalClose = false;
 
+    // Cancel any pending reconnect so a manual connect() can't double-fire
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    // Tear down any previous socket — a lingering half-open socket's late
+    // close/error events would otherwise corrupt the new connection's state.
+    if (this.ws) {
+      this.ws.removeAllListeners();
+      try {
+        this.ws.terminate();
+      } catch {
+        // Already closed
+      }
+      this.ws = null;
+    }
+
     try {
       const headers: Record<string, string> = {};
       if (this.secret) {
@@ -146,9 +179,19 @@ export class AgentClient extends EventEmitter {
       });
 
       this.ws.on("message", (raw: WebSocket.RawData) => {
+        // Any inbound traffic proves the connection is alive — don't let the
+        // heartbeat watchdog kill a connection that's actively serving RPCs
+        // just because the server's ping scheduler is busy.
+        this._clearHeartbeatTimeout();
+
         try {
           const message = JSON.parse(raw.toString()) as JsonRpcRequest;
-          this._handleMessage(message);
+          // _handleMessage is async; without this catch, a rejection (e.g. a
+          // throwing logger or serializer) becomes an unhandledRejection that
+          // kills the whole process.
+          Promise.resolve(this._handleMessage(message)).catch((error: unknown) => {
+            logger.error(`Unhandled error in message handler: ${errorMessage(error)}`);
+          });
         } catch (error: unknown) {
           logger.error(`Failed to parse message: ${errorMessage(error)}`);
         }
@@ -163,7 +206,7 @@ export class AgentClient extends EventEmitter {
         this.emit("disconnected", { code, reason: reasonString });
 
         if (!this.intentionalClose) {
-          logger.warn(`Connection lost — use Save & Reconnect to retry`);
+          this._scheduleReconnect();
         }
       });
 
@@ -183,7 +226,11 @@ export class AgentClient extends EventEmitter {
         const statusCode = response.statusCode || 0;
         if (statusCode === 401) {
           logger.error(`Authentication failed — invalid or missing API secret`);
+          // Deliberately latched: retrying a bad secret would hot-loop 401s.
+          // Consumers (tray app) surface this as a distinct state instead of
+          // a generic "disconnected".
           this.intentionalClose = true;
+          this.emit("auth-failed", { statusCode });
           this.ws?.close();
         } else {
           logger.error(`Unexpected HTTP ${statusCode} during WebSocket upgrade`);
@@ -198,6 +245,11 @@ export class AgentClient extends EventEmitter {
     this.intentionalClose = true;
     this._stopHeartbeat();
     this._unwatchAll();
+
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
 
     if (this.ws && this.connected) {
       // Send deregister before closing
@@ -271,7 +323,7 @@ export class AgentClient extends EventEmitter {
         logger.success(`Server confirmed registration`);
       } else if (message.method === "agent.ping") {
         // Respond to application-level ping + treat as heartbeat proof-of-liveness
-        if (this.heartbeatTimeout) clearTimeout(this.heartbeatTimeout);
+        this._clearHeartbeatTimeout();
         this._send({ jsonrpc: "2.0", method: "agent.pong", params: { agentId: this.agentId } });
       } else if (message.method === "agent.kicked") {
         // Server-initiated disconnect — suppress auto-reconnect
@@ -327,10 +379,15 @@ export class AgentClient extends EventEmitter {
   _send(message: Record<string, unknown>) {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
+    } else {
+      // Never silently drop — a response computed after a disconnect is a
+      // debugging signal, not noise (the server will time the request out).
+      const label = message.method || (message.id !== undefined ? `response ${String(message.id)}` : "message");
+      logger.warn(`Dropped outbound ${label} — socket not open`);
     }
   }
 
-  _sendResponse(id: string, result: unknown, error: { code: number; message: string } | undefined) {
+  _sendResponse(id: string | number, result: unknown, error: { code: number; message: string } | undefined) {
     logger.rpc("out", error ? "error" : "result", id);
     const message: Record<string, unknown> = { jsonrpc: "2.0", id };
     if (error) {
@@ -366,8 +423,12 @@ export class AgentClient extends EventEmitter {
 
   _stopHeartbeat() {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
-    if (this.heartbeatTimeout) clearTimeout(this.heartbeatTimeout);
     this.heartbeatTimer = null;
+    this._clearHeartbeatTimeout();
+  }
+
+  _clearHeartbeatTimeout() {
+    if (this.heartbeatTimeout) clearTimeout(this.heartbeatTimeout);
     this.heartbeatTimeout = null;
   }
 
@@ -388,7 +449,9 @@ export class AgentClient extends EventEmitter {
     }
     this.emit("reconnecting", { attempt: this.reconnectAttempts, delayMs: delay });
 
-    setTimeout(() => {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       if (!this.intentionalClose) {
         this.connect();
       }
@@ -406,7 +469,10 @@ export class AgentClient extends EventEmitter {
   _watchPath({ path: watchPath, recursive = true }: WatchParams) {
     if (!watchPath) return { error: "path is required" };
 
-    const resolved = resolve(watchPath);
+    // Same sanitization every other handler gets (quote-stripping etc.)
+    const validation = validateWorkspacePath(watchPath, this.roots);
+    if (!validation.safe) return { error: validation.error };
+    const resolved = validation.resolved;
 
     // Already watching?
     if (this.watchers.has(resolved)) {
@@ -414,20 +480,52 @@ export class AgentClient extends EventEmitter {
     }
 
     try {
-      const watcher = watch(resolved, { recursive }, (eventType: string, filename: string | null) => {
-        // Debounce rapid changes (e.g. editor save → tmp → rename)
+      const flushEvents = () => {
         const entry = this.watchers.get(resolved);
         if (!entry) return;
 
         if (entry.debounceTimer) clearTimeout(entry.debounceTimer);
-        entry.debounceTimer = setTimeout(() => {
-          entry.debounceTimer = null;
-          this._sendNotification("watch.changed", {
-            watchRoot: resolved,
-            eventType,                       // "rename" | "change"
-            filename: filename || null,       // relative path within watchRoot
-          });
-        }, WATCH_DEBOUNCE_MS);
+        if (entry.maxWaitTimer) clearTimeout(entry.maxWaitTimer);
+        entry.debounceTimer = null;
+        entry.maxWaitTimer = null;
+
+        const events = entry.pendingEvents;
+        const droppedEvents = entry.droppedEvents;
+        entry.pendingEvents = [];
+        entry.droppedEvents = 0;
+        if (events.length === 0) return;
+
+        const lastEvent = events[events.length - 1];
+        this._sendNotification("watch.changed", {
+          watchRoot: resolved,
+          // Legacy single-event fields (last event) — kept for compatibility
+          eventType: lastEvent.eventType,     // "rename" | "change"
+          filename: lastEvent.filename,       // relative path within watchRoot
+          // Full batch: a git checkout touching 50 files yields 50 entries,
+          // not just the last one
+          events,
+          droppedEvents,
+        });
+      };
+
+      const watcher = watch(resolved, { recursive }, (eventType: string, filename: string | null) => {
+        const entry = this.watchers.get(resolved);
+        if (!entry) return;
+
+        if (entry.pendingEvents.length < WATCH_MAX_BATCHED_EVENTS) {
+          entry.pendingEvents.push({ eventType, filename: filename || null });
+        } else {
+          entry.droppedEvents++;
+        }
+
+        // Debounce rapid changes (e.g. editor save → tmp → rename), but flush
+        // at least every WATCH_MAX_WAIT_MS so a steady event stream can't
+        // postpone the notification forever.
+        if (entry.debounceTimer) clearTimeout(entry.debounceTimer);
+        entry.debounceTimer = setTimeout(flushEvents, WATCH_DEBOUNCE_MS);
+        if (!entry.maxWaitTimer) {
+          entry.maxWaitTimer = setTimeout(flushEvents, WATCH_MAX_WAIT_MS);
+        }
       });
 
       watcher.on("error", (watchError: Error) => {
@@ -435,7 +533,7 @@ export class AgentClient extends EventEmitter {
         this._unwatchPath({ path: resolved });
       });
 
-      this.watchers.set(resolved, { watcher, debounceTimer: null });
+      this.watchers.set(resolved, { watcher, debounceTimer: null, maxWaitTimer: null, pendingEvents: [], droppedEvents: 0 });
       logger.info(`Watching: ${resolved} (recursive=${recursive})`);
       return { watching: true, path: resolved };
     } catch (error: unknown) {
@@ -449,11 +547,14 @@ export class AgentClient extends EventEmitter {
   _unwatchPath({ path: watchPath }: WatchParams) {
     if (!watchPath) return { error: "path is required" };
 
-    const resolved = resolve(watchPath);
+    const validation = validateWorkspacePath(watchPath, this.roots);
+    if (!validation.safe) return { error: validation.error };
+    const resolved = validation.resolved;
     const entry = this.watchers.get(resolved);
     if (!entry) return { watching: false, path: resolved, message: "Not watching" };
 
     if (entry.debounceTimer) clearTimeout(entry.debounceTimer);
+    if (entry.maxWaitTimer) clearTimeout(entry.maxWaitTimer);
     entry.watcher.close();
     this.watchers.delete(resolved);
 
@@ -467,6 +568,7 @@ export class AgentClient extends EventEmitter {
   _unwatchAll() {
     for (const [path, entry] of this.watchers) {
       if (entry.debounceTimer) clearTimeout(entry.debounceTimer);
+      if (entry.maxWaitTimer) clearTimeout(entry.maxWaitTimer);
       entry.watcher.close();
       logger.debug(`Unwatched (shutdown): ${path}`);
     }

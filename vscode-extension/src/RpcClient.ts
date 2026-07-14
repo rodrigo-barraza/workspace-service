@@ -22,6 +22,17 @@ interface PendingRpc {
 
 export type NotificationHandler = (method: string, params: Record<string, unknown>) => void;
 
+/**
+ * Mutable holder that always points at the current RPC client + workspace root.
+ * Commands and providers are registered once at activation and read through
+ * this holder, so connect/reconnect can swap the connection without
+ * re-registering anything (re-registration throws "command already exists").
+ */
+export interface RpcConnectionHolder {
+  rpc: RpcClient;
+  workspaceRoot: string;
+}
+
 // ────────────────────────────────────────────────────────────
 // Constants
 // ────────────────────────────────────────────────────────────
@@ -45,11 +56,13 @@ export class RpcClient {
   private reconnectAttempts = 0;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private heartbeatTimeout: ReturnType<typeof setTimeout> | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingRpc = new Map<string, PendingRpc>();
   private notificationHandler: NotificationHandler | null = null;
 
   private onConnected: (() => void) | null = null;
   private onDisconnected: (() => void) | null = null;
+  private onAuthFailed: (() => void) | null = null;
 
   constructor(backendUrl: string, secret: string) {
     this.backendUrl = backendUrl;
@@ -64,11 +77,13 @@ export class RpcClient {
     onConnected?: () => void;
     onDisconnected?: () => void;
     onNotification?: NotificationHandler;
+    onAuthFailed?: () => void;
   }): void {
     this.intentionalClose = false;
     this.onConnected = opts?.onConnected ?? null;
     this.onDisconnected = opts?.onDisconnected ?? null;
     this.notificationHandler = opts?.onNotification ?? null;
+    this.onAuthFailed = opts?.onAuthFailed ?? null;
 
     this._connect();
   }
@@ -77,15 +92,29 @@ export class RpcClient {
     this.intentionalClose = true;
     this._stopHeartbeat();
 
-    // Reject all pending RPCs
-    for (const [id, pending] of this.pendingRpc) {
-      clearTimeout(pending.timer);
-      pending.reject(new Error("Client disconnecting"));
+    // Cancel any pending reconnect attempt
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
     }
-    this.pendingRpc.clear();
 
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.close(1000, "Client shutting down");
+    // Reject all pending RPCs
+    this._rejectAllPending(new Error("Client disconnecting"));
+
+    if (this.ws) {
+      // Detach listeners first so a late 'open'/'close' on the old socket
+      // can't restart the heartbeat or trigger a reconnect.
+      this.ws.removeAllListeners();
+      this.ws.on("error", () => {
+        // Suppress — errors on a discarded socket are irrelevant
+      });
+
+      if (this.ws.readyState === WebSocket.OPEN) {
+        this.ws.close(1000, "Client shutting down");
+      } else if (this.ws.readyState !== WebSocket.CLOSED) {
+        // CONNECTING or CLOSING — terminate so the socket doesn't leak
+        this.ws.terminate();
+      }
     }
     this.ws = null;
     this.connected = false;
@@ -139,6 +168,11 @@ export class RpcClient {
       this.ws = new WebSocket(this.backendUrl, { headers });
 
       this.ws.on("open", () => {
+        if (this.intentionalClose) {
+          // disconnect() raced the handshake — don't resurrect the connection
+          this.ws?.terminate();
+          return;
+        }
         this.connected = true;
         this.reconnectAttempts = 0;
         this._startHeartbeat();
@@ -146,6 +180,10 @@ export class RpcClient {
       });
 
       this.ws.on("message", (raw: Buffer) => {
+        // Any inbound traffic proves the connection is alive — don't let the
+        // heartbeat watchdog kill a connection that's actively serving RPCs.
+        this._clearHeartbeatTimeout();
+
         try {
           const msg = JSON.parse(raw.toString());
           this._handleMessage(msg);
@@ -154,10 +192,19 @@ export class RpcClient {
         }
       });
 
-      this.ws.on("pong", () => {
-        if (this.heartbeatTimeout) {
-          clearTimeout(this.heartbeatTimeout);
-          this.heartbeatTimeout = null;
+      this.ws.on("unexpected-response", (request, response) => {
+        if (response.statusCode === 401) {
+          // Auth failure — retrying with the same secret can never succeed,
+          // so stop the reconnect loop and surface it to the caller.
+          this.intentionalClose = true;
+          this.connected = false;
+          this._stopHeartbeat();
+          this._rejectAllPending(new Error("Authentication failed (HTTP 401)"));
+          request.destroy();
+          this.onAuthFailed?.();
+        } else {
+          request.destroy();
+          this._scheduleReconnect();
         }
       });
 
@@ -165,6 +212,10 @@ export class RpcClient {
         const wasConnected = this.connected;
         this.connected = false;
         this._stopHeartbeat();
+
+        // Fail fast — reject in-flight RPCs instead of letting each one
+        // hang until its own timeout fires.
+        this._rejectAllPending(new Error("Connection closed"));
 
         if (wasConnected) {
           this.onDisconnected?.();
@@ -202,9 +253,22 @@ export class RpcClient {
 
     // Notification (no id, has method)
     if (!msg.id && msg.method) {
+      if (msg.method === "agent.ping") {
+        // Respond to application-level ping — liveness proof for the server
+        this._send({ jsonrpc: "2.0", method: "agent.pong", params: {} });
+        return;
+      }
       this.notificationHandler?.(msg.method, msg.params || {});
       return;
     }
+  }
+
+  private _rejectAllPending(err: Error): void {
+    for (const pending of this.pendingRpc.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(err);
+    }
+    this.pendingRpc.clear();
   }
 
   private _send(msg: object): void {
@@ -221,16 +285,33 @@ export class RpcClient {
     this._stopHeartbeat();
     this.heartbeatTimer = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
-        this.ws.ping();
-        this.heartbeatTimeout = setTimeout(() => {
-          this.ws?.terminate();
-        }, HEARTBEAT_TIMEOUT_MS);
+        // Application-level heartbeat instead of WebSocket control frames,
+        // because reverse proxies (Cloudflare, nginx) absorb WS-level ping/pong.
+        //
+        // NOTE: this client connects to /ws/workspace, whose server-side
+        // handler only processes RPC REQUESTS (id + method) and silently drops
+        // notifications — an `agent.heartbeat` notification would never be
+        // answered. `agents.list` is the endpoint's cheap meta-method, and any
+        // response (even an error) clears the watchdog via the message handler.
+        this.call("agents.list", {}, HEARTBEAT_TIMEOUT_MS).catch(() => {
+          // Timeout/rejection is handled by the watchdog below — and a
+          // rejected call after a dropped socket must not surface anywhere
+        });
+        if (!this.heartbeatTimeout) {
+          this.heartbeatTimeout = setTimeout(() => {
+            this.ws?.terminate();
+          }, HEARTBEAT_TIMEOUT_MS);
+        }
       }
     }, HEARTBEAT_INTERVAL_MS);
   }
 
   private _stopHeartbeat(): void {
     if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = null; }
+    this._clearHeartbeatTimeout();
+  }
+
+  private _clearHeartbeatTimeout(): void {
     if (this.heartbeatTimeout) { clearTimeout(this.heartbeatTimeout); this.heartbeatTimeout = null; }
   }
 
@@ -240,6 +321,7 @@ export class RpcClient {
 
   private _scheduleReconnect(): void {
     if (this.intentionalClose) return;
+    if (this.reconnectTimer) return; // already scheduled
 
     this.reconnectAttempts++;
     const delay = Math.min(
@@ -247,7 +329,8 @@ export class RpcClient {
       MAX_RECONNECT_DELAY_MS,
     );
 
-    setTimeout(() => {
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       if (!this.intentionalClose) {
         this._connect();
       }

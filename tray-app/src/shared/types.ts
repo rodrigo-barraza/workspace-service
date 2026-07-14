@@ -15,10 +15,14 @@ export interface WslDistroInfo {
   isDefault: boolean;
 }
 
-export type AgentConnectionStatus = "connected" | "disconnected" | "connecting";
+export type AgentConnectionStatus = "connected" | "disconnected" | "connecting" | "auth-failed";
 
 export interface AgentStatusInfo {
   connectionStatus: AgentConnectionStatus;
+  // A running child that is reconnecting is still "running" — UI enablement
+  // (Disconnect button) keys off this, while status dots key off
+  // connectionStatus. Conflating the two is what made the old UI lie.
+  processRunning: boolean;
   reconnectAttempts: number;
   agentId: string | null;
   backendUrl: string | null;

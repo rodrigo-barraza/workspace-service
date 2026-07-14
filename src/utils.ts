@@ -1,4 +1,5 @@
-import { resolve } from "node:path";
+import { resolve, sep } from "node:path";
+import { existsSync } from "node:fs";
 
 // ────────────────────────────────────────────────────────────
 // Root Virtualization
@@ -147,10 +148,43 @@ export function devirtualizeRequestParams(value: unknown, fieldName?: string): u
 
 import type { PathValidation } from "./types.ts";
 
+// ── Containment ─────────────────────────────────────────────
+//
+// Inside Docker the container is the jail and containment is unnecessary
+// (and would break legitimate access to e.g. /tmp). But the same code runs
+// directly on user machines via the tray app and standalone binaries — there,
+// without containment, any connected backend could read ~/.ssh or write
+// ~/.bashrc. Default: ON outside Docker, OFF inside.
+//
+// Override with WORKSPACE_CONTAINMENT=on|off.
+//
+// Docker detection: /.dockerenv, or path virtualization being active
+// (only the Docker deployment sets WORKSPACE_ACTUAL_ROOT).
+const isDockerDeployment = existsSync("/.dockerenv") || isVirtualized;
+
+export function isContainmentEnabled(): boolean {
+  const setting = (process.env.WORKSPACE_CONTAINMENT || "").toLowerCase();
+  if (setting === "on") return true;
+  if (setting === "off") return false;
+  return !isDockerDeployment;
+}
+
+function isContainedInRoots(resolved: string, roots: string[]): boolean {
+  return roots.some((root) => {
+    const resolvedRoot = resolve(root);
+    return resolved === resolvedRoot || resolved.startsWith(resolvedRoot + sep);
+  });
+}
+
 /**
  * Validate and resolve an input path against workspace roots.
  * Relative paths resolve against roots[0] (the workspace root),
  * absolute paths resolve directly.
+ *
+ * When containment is enabled (host installs — see above), the resolved
+ * path must fall under one of the configured roots. Note: containment is
+ * lexical (`..` is normalized by resolve()); symlinks inside a root that
+ * point outside it are not chased.
  */
 export function validateWorkspacePath(inputPath: string, roots: string[]): PathValidation {
   if (!inputPath || typeof inputPath !== "string") {
@@ -166,5 +200,14 @@ export function validateWorkspacePath(inputPath: string, roots: string[]): PathV
   const resolved = sanitizedPath.startsWith("/")
     ? resolve(sanitizedPath)
     : resolve(roots[0], sanitizedPath);
+
+  if (isContainmentEnabled() && roots.length > 0 && !isContainedInRoots(resolved, roots)) {
+    return {
+      safe: false,
+      resolved: "",
+      error: `Path is outside the workspace root(s): ${sanitizedPath}. Accessible root(s): ${roots.join(", ")}`,
+    };
+  }
+
   return { safe: true, resolved };
 }

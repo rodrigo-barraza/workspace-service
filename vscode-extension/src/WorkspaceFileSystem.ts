@@ -190,11 +190,26 @@ export class WorkspaceFileSystem implements vscode.FileSystemProvider {
       }
     }
 
-    const result = await this.rpc.call<FileWriteResult>("file.write", {
-      path: uri.path,
-      content: Buffer.from(content).toString("utf-8"),
-      createDirs: true,
-    });
+    // Detect binary payloads — coercing them through UTF-8 corrupts bytes
+    // that aren't valid UTF-8 sequences. A round-trip comparison catches this.
+    const contentBuffer = Buffer.from(content);
+    const utf8RoundTrip = Buffer.from(contentBuffer.toString("utf-8"), "utf-8");
+    const isBinary = Buffer.compare(utf8RoundTrip, contentBuffer) !== 0;
+
+    const result = await this.rpc.call<FileWriteResult>(
+      "file.write",
+      isBinary
+        ? {
+            path: uri.path,
+            contentBase64: contentBuffer.toString("base64"),
+            createDirs: true,
+          }
+        : {
+            path: uri.path,
+            content: contentBuffer.toString("utf-8"),
+            createDirs: true,
+          },
+    );
 
     if (result.error) {
       throw vscode.FileSystemError.Unavailable(result.error);
@@ -286,20 +301,64 @@ export class WorkspaceFileSystem implements vscode.FileSystemProvider {
   // Watch
   // ──────────────────────────────────────────────────────────
 
-  watch(uri: vscode.Uri, options: { recursive: boolean; excludes: string[] }): vscode.Disposable {
-    // Subscribe to remote file-system changes
-    this.rpc.call("watch.subscribe", {
-      path: uri.path,
-      recursive: options.recursive,
-    }).catch(() => {
-      // Non-fatal — watching is best-effort
-    });
+  // Server-side subscriptions, refcounted per path so disposing one watcher
+  // doesn't kill sibling watchers, and replayable after a reconnect (the
+  // server loses all subscriptions when the socket drops).
+  private watchSubscriptions = new Map<string, { recursive: boolean; count: number }>();
 
+  watch(uri: vscode.Uri, options: { recursive: boolean; excludes: string[] }): vscode.Disposable {
+    const watchPath = uri.path;
+    const existing = this.watchSubscriptions.get(watchPath);
+
+    if (existing) {
+      existing.count++;
+      // Upgrade to recursive if a new watcher needs it
+      if (options.recursive && !existing.recursive) {
+        existing.recursive = true;
+        this.rpc.call("watch.subscribe", {
+          path: watchPath,
+          recursive: true,
+        }).catch(() => {});
+      }
+    } else {
+      this.watchSubscriptions.set(watchPath, { recursive: options.recursive, count: 1 });
+
+      // Subscribe to remote file-system changes
+      this.rpc.call("watch.subscribe", {
+        path: watchPath,
+        recursive: options.recursive,
+      }).catch(() => {
+        // Non-fatal — watching is best-effort
+      });
+    }
+
+    let disposed = false;
     return new vscode.Disposable(() => {
-      this.rpc.call("watch.unsubscribe", {
-        path: uri.path,
-      }).catch(() => {});
+      if (disposed) return;
+      disposed = true;
+
+      const entry = this.watchSubscriptions.get(watchPath);
+      if (!entry) return;
+
+      entry.count--;
+      if (entry.count <= 0) {
+        // Last watcher on this path — safe to unsubscribe server-side
+        this.watchSubscriptions.delete(watchPath);
+        this.rpc.call("watch.unsubscribe", {
+          path: watchPath,
+        }).catch(() => {});
+      }
     });
+  }
+
+  /** Replay all active watch subscriptions — call after (re)connecting */
+  resubscribeWatchers(): void {
+    for (const [watchPath, entry] of this.watchSubscriptions) {
+      this.rpc.call("watch.subscribe", {
+        path: watchPath,
+        recursive: entry.recursive,
+      }).catch(() => {});
+    }
   }
 
   // ──────────────────────────────────────────────────────────

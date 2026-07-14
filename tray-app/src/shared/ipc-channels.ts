@@ -9,6 +9,7 @@ export const IPC_CHANNELS = {
   OPEN_FOLDER_DIALOG: "dialog:open-folder",
   SETUP_COMPLETE: "setup:complete",
   LOG_ENTRY: "log:entry",
+  STATUS_CHANGED: "agent:status-changed",
   LOG_GET_ALL: "log:get-all",
   GET_AUTO_LAUNCH: "autolaunch:get",
   SET_AUTO_LAUNCH: "autolaunch:set",
