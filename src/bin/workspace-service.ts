@@ -79,7 +79,7 @@ if (!backendUrl.includes("/ws/agent")) {
 let secret = cliOptions.secret || "";
 if (!secret) {
   try {
-    const { connectDatabase, disconnectDatabase } = await import("@rodrigo-barraza/service-library/mongo");
+    const { connectDatabase, disconnectDatabase } = await import("@rodrigo-barraza/utilities-library/service/mongo");
     const mongoUri = process.env.MONGO_URI;
     if (mongoUri) {
       const database = await connectDatabase(mongoUri, { dbName: "prism" });
