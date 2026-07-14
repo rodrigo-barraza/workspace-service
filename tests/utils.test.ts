@@ -168,6 +168,80 @@ describe("validateWorkspacePath", () => {
     expect(validateWorkspacePath(null as any, ["/root"]).safe).toBe(false);
     expect(validateWorkspacePath(undefined as any, ["/root"]).safe).toBe(false);
   });
+
+  // Blocked patterns — parity with tools-service local BLOCKED_PATTERNS
+  // (audit P1-6: remote used to allow .env/keys/node_modules that local blocks).
+  describe("blocked patterns", () => {
+    it("should block credential files even inside an allowed root", async () => {
+      const { validateWorkspacePath } = await import("../src/utils.ts");
+      const roots = ["/some/root"];
+
+      for (const blocked of [
+        "/some/root/.env",
+        "/some/root/config/.env.production",
+        "/some/root/certs/server.pem",
+        "/some/root/certs/server.key",
+        "/some/root/backup/id_rsa",
+        "/some/root/backup/id_ed25519",
+      ]) {
+        const result = validateWorkspacePath(blocked, roots);
+        expect(result.safe, blocked).toBe(false);
+        expect(result.error).toMatch(/blocked pattern/);
+      }
+    });
+
+    it("should still allow .env templates", async () => {
+      const { validateWorkspacePath } = await import("../src/utils.ts");
+      const roots = ["/some/root"];
+
+      for (const allowed of [
+        "/some/root/.env.example",
+        "/some/root/.env.sample",
+        "/some/root/.env.template",
+      ]) {
+        expect(validateWorkspacePath(allowed, roots).safe, allowed).toBe(true);
+      }
+    });
+
+    it("should block node_modules and .git internals", async () => {
+      const { validateWorkspacePath } = await import("../src/utils.ts");
+      const roots = ["/some/root"];
+
+      expect(validateWorkspacePath("/some/root/node_modules/pkg/index.js", roots).safe).toBe(false);
+      expect(validateWorkspacePath("/some/root/.git/objects/ab/cdef", roots).safe).toBe(false);
+      expect(validateWorkspacePath("/some/root/.git/hooks/pre-commit", roots).safe).toBe(false);
+      // .git itself (e.g. .git/config for git ops) is not blocked
+      expect(validateWorkspacePath("/some/root/.git/config", roots).safe).toBe(true);
+    });
+
+    it("WORKSPACE_ALLOW_ENV_FILES=on waives credential patterns but not node_modules", async () => {
+      process.env.WORKSPACE_ALLOW_ENV_FILES = "on";
+      try {
+        const { validateWorkspacePath } = await import("../src/utils.ts");
+        const roots = ["/some/root"];
+
+        expect(validateWorkspacePath("/some/root/.env", roots).safe).toBe(true);
+        expect(validateWorkspacePath("/some/root/certs/server.key", roots).safe).toBe(true);
+        expect(validateWorkspacePath("/some/root/node_modules/pkg/index.js", roots).safe).toBe(false);
+      } finally {
+        delete process.env.WORKSPACE_ALLOW_ENV_FILES;
+      }
+    });
+
+    it("should match patterns on backslash-separated (Windows) paths too", async () => {
+      process.env.WORKSPACE_CONTAINMENT = "off";
+      try {
+        const { validateWorkspacePath } = await import("../src/utils.ts");
+        // On a Windows binary build resolve() yields backslashes; the pattern
+        // check normalizes separators. Simulated here with an embedded backslash.
+        const result = validateWorkspacePath("/some/root/node_modules\\pkg/index.js", ["/some/root"]);
+        expect(result.safe).toBe(false);
+        expect(result.error).toMatch(/blocked pattern/);
+      } finally {
+        delete process.env.WORKSPACE_CONTAINMENT;
+      }
+    });
+  });
 });
 
 // ══════════════════════════════════════════════════════════════

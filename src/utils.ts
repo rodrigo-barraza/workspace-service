@@ -176,6 +176,33 @@ function isContainedInRoots(resolved: string, roots: string[]): boolean {
   });
 }
 
+// ── Blocked patterns ────────────────────────────────────────
+//
+// Mirrors the tools-service local BLOCKED_PATTERNS so an operation is refused
+// the same way whether it executes locally on the server or remotely here.
+// Always blocked — package internals and git object stores:
+const BLOCKED_PATTERNS = [
+  /node_modules\//,
+  /\.git\/objects\//,
+  /\.git\/hooks\//,
+];
+// Blocked unless this machine opts out. The server-side equivalent is the
+// dynamic `security.allowEnvFiles` setting; the agent has no settings-store
+// access, so the waiver is the machine-local env var WORKSPACE_ALLOW_ENV_FILES=on
+// (these files live on THIS machine, so consent belongs here too).
+const CREDENTIAL_PATTERNS = [
+  /\.env$/,
+  /\.env\.(?!example|sample|template|defaults|dist).+$/,
+  /\.pem$/,
+  /\.key$/,
+  /id_rsa/,
+  /id_ed25519/,
+];
+
+function credentialFilesAllowed(): boolean {
+  return (process.env.WORKSPACE_ALLOW_ENV_FILES || "").toLowerCase() === "on";
+}
+
 /**
  * Validate and resolve an input path against workspace roots.
  * Relative paths resolve against roots[0] (the workspace root),
@@ -207,6 +234,21 @@ export function validateWorkspacePath(inputPath: string, roots: string[]): PathV
       resolved: "",
       error: `Path is outside the workspace root(s): ${sanitizedPath}. Accessible root(s): ${roots.join(", ")}`,
     };
+  }
+
+  // Normalize separators so patterns match on Windows binary builds too.
+  const normalized = resolved.replace(/\\/g, "/");
+  const activePatterns = credentialFilesAllowed()
+    ? BLOCKED_PATTERNS
+    : [...BLOCKED_PATTERNS, ...CREDENTIAL_PATTERNS];
+  for (const pattern of activePatterns) {
+    if (pattern.test(normalized)) {
+      return {
+        safe: false,
+        resolved: "",
+        error: `Path '${resolved}' matches blocked pattern: ${pattern.source}`,
+      };
+    }
   }
 
   return { safe: true, resolved };
