@@ -156,8 +156,8 @@ async function connectWorkspace(context: vscode.ExtensionContext): Promise<void>
   if (!backendUrl) {
     backendUrl = await vscode.window.showInputBox({
       prompt: "Enter the tools-service URL",
-      placeHolder: "ws://192.168.86.2:5590",
-      value: "ws://192.168.86.2:5590",
+      placeHolder: "ws://localhost:5590",
+      value: "ws://localhost:5590",
     }) || "";
   }
 

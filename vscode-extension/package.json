@@ -56,7 +56,7 @@
         "workspaceRemote.backendUrl": {
           "type": "string",
           "default": "",
-          "description": "WebSocket URL of the tools-service backend (e.g. ws://192.168.86.2:5590)"
+          "description": "WebSocket URL of the tools-service backend (e.g. ws://localhost:5590)"
         },
         "workspaceRemote.apiSecret": {
           "type": "string",
