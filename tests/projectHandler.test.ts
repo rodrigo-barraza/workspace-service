@@ -11,26 +11,6 @@ import type { TreeEntry } from "../src/types.ts";
 const FIXTURE_ROOT = resolve(import.meta.dirname!, ".fixtures-project-handler");
 
 /**
- * Recursively collect all entry names at a specific depth in the tree.
- */
-function collectNamesAtDepth(
-  entries: TreeEntry[],
-  targetDepth: number,
-  currentDepth = 0,
-): string[] {
-  const names: string[] = [];
-  for (const entry of entries) {
-    if (currentDepth === targetDepth) {
-      names.push(entry.name);
-    }
-    if (entry.type === "directory" && entry.children && currentDepth < targetDepth) {
-      names.push(...collectNamesAtDepth(entry.children, targetDepth, currentDepth + 1));
-    }
-  }
-  return names;
-}
-
-/**
  * Flatten the entire tree into a list of { name, type } entries.
  */
 function flattenTree(entries: TreeEntry[]): Array<{ name: string; type: string }> {

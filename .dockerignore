@@ -10,7 +10,7 @@ node_modules
 deploy.sh
 docker-compose.yml
 Dockerfile
-eslint.config.js
+.oxlintrc.json
 vitest.config.*
 tests
 *.md

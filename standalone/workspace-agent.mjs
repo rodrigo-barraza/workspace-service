@@ -163,11 +163,11 @@ function selectDirectoryViaNativeDialog() {
       try {
         const pathResult = execSync('zenity --file-selection --directory --title="Select workspace directory to sync with Prism"', { encoding: "utf-8" }).trim();
         return pathResult || null;
-      } catch (error) {
+      } catch  {
         return null;
       }
     }
-  } catch (error) {
+  } catch  {
     return null;
   }
   return null;
@@ -250,7 +250,7 @@ async function main() {
 
   const isConfigurationIncomplete = !backendUrl || workspacePaths.length === 0 || !secret;
   if (isConfigurationIncomplete) {
-    let configuration = await readPersistentConfiguration();
+    const configuration = await readPersistentConfiguration();
     if (configuration) {
       backendUrl = backendUrl || configuration.backend;
       workspacePaths = workspacePaths.length > 0 ? workspacePaths : (configuration.workspace || []);
