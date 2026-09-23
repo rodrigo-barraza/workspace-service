@@ -1,34 +1,12 @@
 blockExoticSubdeps: false
 allowBuilds:
-  '@rodrigo-barraza/utilities-library': true
+  # Git-hosted libs ship a built dist/ and run no scripts. `false` by NAME covers every
+  # SHA; a name-level `true` makes pnpm 11 abort each new SHA as a "revoked" build.
+  '@rodrigo-barraza/utilities-library': false
   esbuild: true
   protobufjs: true
   canvas: true
   unrs-resolver: true
   sharp: true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/16951ef6d0c01979265c18c3e94070d304851a3a': true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/802d6e8a3eba22f3ad2fbba7c6f65e8037f59fad': true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/ba734b5efc065a2726ba5c53b1b67503a99d93f3': true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/7ecd7c05b648224ba82d967e24955f38ee884ecb': true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/16e0057e84b6379446e52aefc962e51255fd9f6e': true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/8a2615e9016c1af532cbdbce26275df54c0abe97': true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/d9ff3d56ba0db06370938b3adf7f4147b0b0b99f': true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/67a12ccde05edb24196995442741e8b6066b62c1': true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/a80c57e898a5a5735fe5080ae664774ec3730501': true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/60842bb9a3c5fee322abc4a9dbc9882130df4916': true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/4bfe89362ca921c7fd552e1c4fbaede194b12c93': true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/cbd756ad472ab41d276cdc1f6e4c2c7f769caa04': true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/e1a53dac7e6693087a3d4f096175e1789ac4cdf2': true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/ae27380c959d29895d4f24cf72b6c08cca9cfc12': true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/18cc526e6be0eaaab7869d17871bbc8ccfdc66f3': true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/edf980ffc06fd5c1a162844139ea43f984dbdd97': true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/5a6d7b98a9ae898db26a422337cdd7e481262479': true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/7d1209ea15a0129a58a78216bce770d950fa4ef0': true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/e16f415e82ca21aef685a91bff3b7caf274814cb': true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/0e7751c631417b41cc3470be77bbd177018c7e04': true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/3edad15ee7d9894e464501a07e4cff1f931206c9': true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/c27b5796b79d8fe763253b9271bfaaec97a2e9df': true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/eeb0b30253298c71873ee307c7d75d3b2dc30386': true
-  '@rodrigo-barraza/utilities-library@https://codeload.github.com/rodrigo-barraza/utilities-library/tar.gz/0b9f9ce6f81364bc01f41d93613aed0b61d26882': true
 overrides:
   '@rodrigo-barraza/utilities-library': github:rodrigo-barraza/utilities-library#master
