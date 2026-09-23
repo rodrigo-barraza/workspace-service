@@ -77,7 +77,7 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "lint": "eslint src --ext ts",
+    "lint": "oxlint -c ../.oxlintrc.json src",
     "package": "npx -y @vscode/vsce package",
     "vscode:prepublish": "npm run compile"
   },
@@ -85,7 +85,7 @@
     "@types/node": "^22.0.0",
     "@types/vscode": "^1.85.0",
     "@types/ws": "^8.18.0",
-    "typescript": "^5.8.0"
+    "typescript": "next"
   },
   "dependencies": {
     "ws": "^8.20.0"

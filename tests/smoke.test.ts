@@ -2,7 +2,7 @@
 // workspace-service is a CLI sidecar (not an Express service via createService),
 // so we test the health server shape directly.
 
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 
 describe("Health server", () => {
   it("startHealthServer is importable", async () => {

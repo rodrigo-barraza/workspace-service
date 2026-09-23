@@ -116,7 +116,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.window.registerUriHandler({
       handleUri(uri: vscode.Uri): void {
-        void handleExternalUri(uri, context);
+        void handleExternalUri(uri);
       },
     }),
   );
@@ -132,7 +132,7 @@ export function activate(context: vscode.ExtensionContext): void {
       // SecretStorage first, falling back to the (legacy) apiSecret setting
       void context.secrets.get(SECRET_STORAGE_KEY).then((storedSecret) => {
         const secret = storedSecret || config.get<string>("apiSecret") || "";
-        _connect(backendUrl, secret, remoteFolder.uri.path, remoteFolder.name, context);
+        _connect(backendUrl, secret, remoteFolder.uri.path, remoteFolder.name);
       });
     }
   }
@@ -248,7 +248,6 @@ async function connectWorkspace(context: vscode.ExtensionContext): Promise<void>
   const items: WorkspacePickItem[] = [];
   for (const agent of agents) {
     for (const root of agent.roots) {
-      const shortRoot = root.split("/").pop() || root;
       items.push({
         label: `$(server) ${agent.name}`,
         description: root,
@@ -271,7 +270,7 @@ async function connectWorkspace(context: vscode.ExtensionContext): Promise<void>
   }
 
   const folderLabel = `${selected.agentName}: ${selected.root.split("/").pop()}`;
-  _connect(backendUrl, secret, selected.root, folderLabel, context);
+  _connect(backendUrl, secret, selected.root, folderLabel);
 }
 
 function _connect(
@@ -279,7 +278,6 @@ function _connect(
   secret: string,
   workspaceRoot: string,
   folderLabel: string,
-  context: vscode.ExtensionContext,
 ): void {
   // Disconnect existing connection
   if (rpcClient) {
@@ -393,7 +391,7 @@ function disconnectWorkspace(): void {
 // Handles URIs like:
 //   vscode://rodrigo-barraza.workspace-remote/open?backend=ws://host:5590&workspace=/path&secret=xxx
 
-async function handleExternalUri(uri: vscode.Uri, context: vscode.ExtensionContext): Promise<void> {
+async function handleExternalUri(uri: vscode.Uri): Promise<void> {
   const params = new URLSearchParams(uri.query);
   const backend = params.get("backend");
   const workspace = params.get("workspace");
@@ -420,5 +418,5 @@ async function handleExternalUri(uri: vscode.Uri, context: vscode.ExtensionConte
     return;
   }
 
-  _connect(backend, secret, workspace, label, context);
+  _connect(backend, secret, workspace, label);
 }

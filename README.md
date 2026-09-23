@@ -36,7 +36,7 @@ node dist/bin/workspace-service.js \
 
 ## Running Locally (WSL / Bare Node)
 
-If you're developing on a local machine (e.g. WSL2, Linux, macOS), you can run workspace-service directly with Node — no Docker required. This gives you native filesystem performance and full access to your local toolchain (git, npm, eslint, etc.).
+If you're developing on a local machine (e.g. WSL2, Linux, macOS), you can run workspace-service directly with Node — no Docker required. This gives you native filesystem performance and full access to your local toolchain (git, npm, oxlint, etc.).
 
 ### 1. Install dependencies
 
@@ -307,7 +307,7 @@ Uses JSON-RPC 2.0 over WebSocket. The agent responds to the following RPC method
 npm run start         # Start the workspace agent
 npm run dev           # Start with auto-reload (--watch)
 npm run dev:local     # Start with auto-reload, loading .env automatically
-npm run lint          # Run ESLint
+npm run lint          # Run oxlint (.oxlintrc.json)
 npm run lint:fix      # Auto-fix lint issues
 npm run format        # Format with Prettier
 npm run format:check  # Check formatting

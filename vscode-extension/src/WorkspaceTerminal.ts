@@ -125,7 +125,9 @@ class WorkspacePseudoterminal implements vscode.Pseudoterminal {
       // Strip ANSI escape sequences and control characters so pastes (and
       // unhandled cursor keys) don't corrupt the input buffer.
       const printable = data
+        // oxlint-disable-next-line no-control-regex -- matching the ESC byte is the point
         .replace(/\x1b\[[0-9;?]*[A-Za-z~]/g, "")
+        // oxlint-disable-next-line no-control-regex -- as is dropping the control range
         .replace(/[\x00-\x1f\x7f]/g, "");
       if (printable.length > 0) {
         this.inputBuffer += printable;
