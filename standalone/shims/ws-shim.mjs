@@ -3,9 +3,12 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //
 // Drop-in replacement for the `ws` npm package as used by
-// AgentClient.ts. Maps the Node.js EventEmitter-style API
-// (.on/.ping/.terminate) to the browser-compatible WebSocket
-// API (addEventListener) available in Node.js 22+.
+// AgentClient.ts and TaskEngine.ts (a ws monitor). Maps the
+// Node.js EventEmitter-style API (.on/.ping/.terminate) to the
+// browser-compatible WebSocket API (addEventListener) available
+// in Node.js 22+. Both `new WebSocket(url, options)` and
+// `new WebSocket(url, protocols, options)` are accepted, and
+// "message" carries ws's (data, isBinary).
 //
 // Differences from the real `ws` package:
 //   • Custom headers are NOT supported — authentication falls
@@ -19,8 +22,11 @@
 import { EventEmitter } from "node:events";
 
 class WebSocketShim extends EventEmitter {
-  constructor(url, options = {}) {
+  constructor(url, protocolsOrOptions, maybeOptions) {
     super();
+    const hasProtocols = typeof protocolsOrOptions === "string" || Array.isArray(protocolsOrOptions);
+    const protocols = hasProtocols ? protocolsOrOptions : undefined;
+    const options = (hasProtocols ? maybeOptions : protocolsOrOptions) || {};
 
     // The real `ws` package supports { headers: { "x-api-secret": "..." } }.
     // Built-in WebSocket does not support custom headers, so we fall back to
@@ -32,7 +38,8 @@ class WebSocketShim extends EventEmitter {
       url = `${url}${separator}secret=${encodeURIComponent(apiSecret)}`;
     }
 
-    this._socket = new WebSocket(url);
+    this._socket = protocols === undefined ? new WebSocket(url) : new WebSocket(url, protocols);
+    this._socket.binaryType = "arraybuffer";
     this._readyState = WebSocket.CONNECTING;
 
     this._socket.addEventListener("open", () => {
@@ -41,9 +48,9 @@ class WebSocketShim extends EventEmitter {
     });
 
     this._socket.addEventListener("message", (event) => {
-      // ws delivers raw Buffer/string; built-in WebSocket wraps in MessageEvent
-      const data = typeof event.data === "string" ? event.data : event.data.toString();
-      this.emit("message", data);
+      // ws delivers (data, isBinary); built-in WebSocket wraps the frame in a MessageEvent
+      const isBinary = typeof event.data !== "string";
+      this.emit("message", isBinary ? Buffer.from(event.data) : event.data, isBinary);
     });
 
     this._socket.addEventListener("close", (event) => {
