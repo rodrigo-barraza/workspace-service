@@ -279,6 +279,21 @@ describe("AgentClient — RPC dispatch robustness", () => {
     expect((response!.error as { code: number; message: string })).toEqual({ code: -32000, message: "kaboom" });
   });
 
+  it("hands the JSON-RPC id to the handler (command.stream tags its output with it)", async () => {
+    const agent = createAgentClient();
+    agent.methodMap.set("test.id", (_params, requestId) => ({ requestId }));
+
+    agent.connect();
+    const socket = agent.ws as unknown as MockWebSocket;
+    socket.emit("open");
+
+    socket.emit("message", Buffer.from(JSON.stringify({ jsonrpc: "2.0", id: "req-9", method: "test.id" })));
+    await flushMicrotasks();
+
+    const response = socket.sentMessages.find((message) => message.id === "req-9");
+    expect(response!.result).toEqual({ requestId: "req-9" });
+  });
+
   it("dispatches to a registered handler and sends its result", async () => {
     const agent = createAgentClient();
     agent.methodMap.set("test.echo", (params) => ({ echoed: params }));
@@ -292,6 +307,32 @@ describe("AgentClient — RPC dispatch robustness", () => {
 
     const response = socket.sentMessages.find((message) => message.id === "req-2");
     expect(response!.result).toEqual({ echoed: { a: 1 } });
+  });
+});
+
+describe("AgentClient — registration", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("registers its aux root (task output, transcripts) and the tasks, hooks and transcripts capabilities", () => {
+    const agent = createAgentClient();
+    agent.connect();
+    const socket = agent.ws as unknown as MockWebSocket;
+    socket.emit("open");
+
+    const registration = socket.sentMessages.find((message) => message.method === "agent.register");
+    const params = registration!.params as { auxRoots: string[]; capabilities: string[]; displayRoots: string[] };
+    expect(params.auxRoots).toHaveLength(1);
+    expect(params.auxRoots[0]).toMatch(/\/prism-[^/]+$/);
+    expect(params.capabilities).toEqual(["file", "git", "command", "project", "tasks", "hooks", "transcripts"]);
+    // An aux root is never a workspace
+    expect(params.displayRoots).not.toContain(params.auxRoots[0]);
+  });
+
+  it("serves the task, hook and transcript methods", () => {
+    const agent = createAgentClient();
+    for (const method of ["task.start", "task.stop", "task.list", "task.events", "hook.run", "hooks.config", "transcript.append"]) {
+      expect(agent.methodMap.has(method), method).toBe(true);
+    }
   });
 });
 

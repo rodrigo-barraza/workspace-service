@@ -36,7 +36,8 @@ export interface AgentClientOptions {
 
 // ── RPC Method Handler ──────────────────────────────────────
 
-export type RpcHandler = (params: Record<string, unknown>) => unknown | Promise<unknown>;
+/** `requestId` is the JSON-RPC id — streaming handlers tag their notifications with it. */
+export type RpcHandler = (params: Record<string, unknown>, requestId?: string | number) => unknown | Promise<unknown>;
 export type NotifyFn = (event: string, data: Record<string, unknown>) => void;
 
 // ── File Operations ─────────────────────────────────────────
@@ -167,9 +168,37 @@ export interface CommandRunParams {
   command: string;
   cwd?: string;
   timeout?: number;
-  // The local tools-service advertises background execution; this remote agent
-  // has no background registry, so the flag is refused rather than dropped.
+  // Runs it as a shell task (TaskEngine): detached, no time limit, a
+  // task.exit notification when it ends. `description` and `owner` label it.
   runInBackground?: boolean;
+  description?: string;
+  owner?: Record<string, unknown>;
+}
+
+// ── Task Operations ─────────────────────────────────────────
+
+export interface TaskIdParams {
+  taskId: string;
+  afterSeq?: number;
+}
+
+// ── Hook Operations ─────────────────────────────────────────
+
+export interface HookRunParams {
+  command: string;
+  cwd: string;
+  stdin?: string;
+  env?: Record<string, unknown>;
+  timeoutMs?: number;
+}
+
+export interface HooksConfigParams {
+  root: string;
+}
+
+export interface TranscriptAppendParams {
+  conversationId: string;
+  lines: unknown[];
 }
 
 // ── Project Operations ──────────────────────────────────────

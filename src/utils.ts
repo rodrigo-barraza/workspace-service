@@ -1,5 +1,6 @@
 import { resolve, sep } from "node:path";
 import { existsSync } from "node:fs";
+import { prismTempRoot } from "./handlers/TaskEngine.ts";
 
 // ────────────────────────────────────────────────────────────
 // Root Virtualization
@@ -23,6 +24,15 @@ export const WORKSPACE_ACTUAL_ROOT  = process.env.WORKSPACE_ACTUAL_ROOT || WORKS
 export const isVirtualized =
   WORKSPACE_VIRTUAL_ROOT !== WORKSPACE_ACTUAL_ROOT;
 
+// The aux root: task output files and transcripts (`<tmp>/prism-<uid>`). It is
+// advertised and used as an ACTUAL path, so it is never (de)virtualized, and
+// file reads may reach it while writes may not.
+export const AUX_ROOT = prismTempRoot();
+
+function isUnderAuxRoot(actualPath: string): boolean {
+  return actualPath === AUX_ROOT || actualPath.startsWith(AUX_ROOT + "/");
+}
+
 /**
  * Convert a virtual path (LLM-facing) to an actual filesystem path.
  *
@@ -37,6 +47,9 @@ export function devirtualizePath(virtualPath: string): string {
   if (virtualPath === WORKSPACE_ACTUAL_ROOT || virtualPath.startsWith(WORKSPACE_ACTUAL_ROOT + "/")) {
     return virtualPath;
   }
+
+  // A task output file or transcript — an actual path already
+  if (isUnderAuxRoot(virtualPath)) return virtualPath;
 
   // Relative paths pass through — handlers resolve against roots[0]
   if (!virtualPath.startsWith("/")) return virtualPath;
@@ -73,7 +86,7 @@ const REQUEST_PATH_FIELD_NAMES = new Set([
   "path", "cwd", "source", "destination", "path1", "path2",
   "pathA", "pathB",
   "filePath", "repoPath", "projectPath", "watchRoot",
-  "searchPath", "dirPath", "paths",
+  "searchPath", "dirPath", "paths", "root",
 ]);
 
 // Known field names that contain filesystem paths in RPC responses.
@@ -81,7 +94,7 @@ const REQUEST_PATH_FIELD_NAMES = new Set([
 const RESPONSE_PATH_FIELD_NAMES = new Set([
   "path", "filePath", "projectPath", "cwd", "source", "destination",
   "watchRoot", "resolved", "absolutePath", "file",
-  "directory", "paths",
+  "directory", "paths", "dir",
 ]);
 
 /**
@@ -212,8 +225,16 @@ function credentialFilesAllowed(): boolean {
  * path must fall under one of the configured roots. Note: containment is
  * lexical (`..` is normalized by resolve()); symlinks inside a root that
  * point outside it are not chased.
+ *
+ * `readOnlyRoots` (the aux root) answer the other way round: a READ may reach
+ * them whatever the containment, a WRITE never — not even when containment
+ * is off. Only transcript.append writes there, through its own method.
  */
-export function validateWorkspacePath(inputPath: string, roots: string[]): PathValidation {
+export function validateWorkspacePath(
+  inputPath: string,
+  roots: string[],
+  { readOnlyRoots = [], access = "write" }: { readOnlyRoots?: string[]; access?: "read" | "write" } = {},
+): PathValidation {
   if (!inputPath || typeof inputPath !== "string") {
     return { safe: false, resolved: "", error: "Path is required" };
   }
@@ -228,7 +249,16 @@ export function validateWorkspacePath(inputPath: string, roots: string[]): PathV
     ? resolve(sanitizedPath)
     : resolve(roots[0], sanitizedPath);
 
-  if (isContainmentEnabled() && roots.length > 0 && !isContainedInRoots(resolved, roots)) {
+  const inReadOnlyRoot = readOnlyRoots.length > 0 && isContainedInRoots(resolved, readOnlyRoots);
+  if (inReadOnlyRoot && access === "write") {
+    return {
+      safe: false,
+      resolved: "",
+      error: `Path '${resolved}' is in the workspace agent's task output area, which is read-only`,
+    };
+  }
+
+  if (!inReadOnlyRoot && isContainmentEnabled() && roots.length > 0 && !isContainedInRoots(resolved, roots)) {
     return {
       safe: false,
       resolved: "",

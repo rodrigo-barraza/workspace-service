@@ -51,16 +51,24 @@ async function writeFileAtomic(targetPath: string, content: string): Promise<voi
 
 export class FileHandler {
   roots: string[];
-  constructor(roots: string[]) {
+  // Read-only extra roots: the task output files and transcripts (`<tmp>/prism-<uid>`)
+  auxRoots: string[];
+  constructor(roots: string[], auxRoots: string[] = []) {
     this.roots = roots.map((rootPath: string) => resolve(rootPath));
+    this.auxRoots = auxRoots.map((rootPath: string) => resolve(rootPath));
   }
 
   /**
-   * Validate and resolve a path.
+   * Validate and resolve a path for a write.
    * No containment check — the Docker container is the jail.
    */
   validatePath(inputPath: string) {
-    return validateWorkspacePath(inputPath, this.roots);
+    return validateWorkspacePath(inputPath, this.roots, { readOnlyRoots: this.auxRoots, access: "write" });
+  }
+
+  /** Validate and resolve a path for a read — which may also reach the aux roots. */
+  validateReadPath(inputPath: string) {
+    return validateWorkspacePath(inputPath, this.roots, { readOnlyRoots: this.auxRoots, access: "read" });
   }
 
   // ──────────────────────────────────────────────────────────
@@ -68,7 +76,7 @@ export class FileHandler {
   // ──────────────────────────────────────────────────────────
 
   async readFile({ path: filePath, startLine, endLine, raw: rawMode = false }: ReadFileParams) {
-    const validation = this.validatePath(filePath);
+    const validation = this.validateReadPath(filePath);
     if (!validation.safe) return { error: validation.error };
 
     const resolved = validation.resolved;
@@ -324,7 +332,7 @@ export class FileHandler {
 
     const results = await Promise.all(
       pathList.map(async (pathString: string): Promise<FileInfoEntry> => {
-        const validation = this.validatePath(pathString);
+        const validation = this.validateReadPath(pathString);
         if (!validation.safe) {
           return { path: pathString, exists: false, error: validation.error };
         }
@@ -368,7 +376,7 @@ export class FileHandler {
     if (!pathA) return { error: "'pathA' is required" };
     if (!pathB && content === undefined) return { error: "Either 'pathB' or 'content' must be provided" };
 
-    const validA = this.validatePath(pathA);
+    const validA = this.validateReadPath(pathA);
     if (!validA.safe) return { error: validA.error };
 
     try {
@@ -377,7 +385,7 @@ export class FileHandler {
       let labelB: string;
 
       if (pathB) {
-        const validB = this.validatePath(pathB);
+        const validB = this.validateReadPath(pathB);
         if (!validB.safe) return { error: validB.error };
         contentB = await readFile(validB.resolved, "utf-8");
         labelB = validB.resolved;
@@ -721,7 +729,7 @@ export class FileHandler {
   }
 
   async listDirectory({ path: dirPath, recursive = false, maxDepth = 3 }: ListDirectoryParams) {
-    const validation = this.validatePath(dirPath);
+    const validation = this.validateReadPath(dirPath);
     if (!validation.safe) return { error: validation.error };
 
     const resolved = validation.resolved;
@@ -746,7 +754,7 @@ export class FileHandler {
           const fullPath = resolve(dir, entry.name);
           const relativePath = relative(resolved, fullPath);
 
-          const pathValidation = this.validatePath(fullPath);
+          const pathValidation = this.validateReadPath(fullPath);
           if (!pathValidation.safe) continue;
 
           if (entry.isDirectory()) {
@@ -785,7 +793,7 @@ export class FileHandler {
    * Used by the SystemPromptAssembler to embed project structure in the system prompt.
    */
   async directoryTree({ path: dirPath, maxDepth = 2 }: { path: string; maxDepth?: number }) {
-    const validation = this.validatePath(dirPath);
+    const validation = this.validateReadPath(dirPath);
     if (!validation.safe) return { error: validation.error };
 
     const resolved = validation.resolved;
@@ -815,7 +823,7 @@ export class FileHandler {
 
           const fullPath = resolve(currentDirectory, directoryEntry.name);
 
-          const pathValidation = this.validatePath(fullPath);
+          const pathValidation = this.validateReadPath(fullPath);
           if (!pathValidation.safe) continue;
 
           totalEntries++;
@@ -844,7 +852,7 @@ export class FileHandler {
   // ──────────────────────────────────────────────────────────
 
   async grepSearch({ pattern, searchPath, isRegex = false, includes = [], caseInsensitive = false, matchPerLine = true }: GrepSearchParams) {
-    const validation = this.validatePath(searchPath);
+    const validation = this.validateReadPath(searchPath);
     if (!validation.safe) return { error: validation.error };
 
     if (!pattern || typeof pattern !== "string") {
@@ -879,7 +887,7 @@ export class FileHandler {
         const fileExtension = extname(filePath).toLowerCase();
         if (BINARY_FILE_EXTENSIONS.has(fileExtension)) return;
 
-        const pathCheck = this.validatePath(filePath);
+        const pathCheck = this.validateReadPath(filePath);
         if (!pathCheck.safe) return;
 
         try {
@@ -959,7 +967,7 @@ export class FileHandler {
   }
 
   async globFiles({ pattern, searchPath }: GlobFilesParams) {
-    const validation = this.validatePath(searchPath);
+    const validation = this.validateReadPath(searchPath);
     if (!validation.safe) return { error: validation.error };
 
     if (!pattern || typeof pattern !== "string") {
@@ -984,7 +992,7 @@ export class FileHandler {
             await walk(fullPath);
           } else {
             if (globRegex.test(relativePath) || globRegex.test(entry.name)) {
-              const pathCheck = this.validatePath(fullPath);
+              const pathCheck = this.validateReadPath(fullPath);
               if (!pathCheck.safe) continue;
               try {
                 const fileStat = await stat(fullPath);
