@@ -17,6 +17,10 @@
 # Requires:
 #   - Node.js and npm
 #   - TOOLS_API_URL environment variable (default: https://api.tools.rod.dev)
+#   - TOOLS_SERVICE_API_SECRET to upload: tools-service answers /agents/*
+#     only with it. Left unset, it is read from the nearest
+#     vault-service/projects.json above this script (the workspace's
+#     variable store).
 # ============================================================
 
 set -euo pipefail
@@ -149,6 +153,27 @@ fi
 
 step "Uploading installers to MinIO"
 
+# tools-service's API secret: the environment's, else the nearest
+# vault-service/projects.json's. An upload without it is refused (401),
+# so stop before the first one rather than fail each.
+tools_secret() {
+  if [ -n "${TOOLS_SERVICE_API_SECRET:-}" ]; then
+    printf '%s' "$TOOLS_SERVICE_API_SECRET"
+    return 0
+  fi
+  local dir="$SCRIPT_DIR"
+  while [ "$dir" != "/" ]; do
+    if [ -f "${dir}/vault-service/projects.json" ]; then
+      node -e 'const secret = (require(process.argv[1]).config || {}).TOOLS_SERVICE_API_SECRET; if (secret) process.stdout.write(secret);' "${dir}/vault-service/projects.json"
+      return 0
+    fi
+    dir=$(dirname "$dir")
+  done
+}
+
+TOOLS_SECRET=$(tools_secret)
+[ -n "$TOOLS_SECRET" ] || fail "TOOLS_SERVICE_API_SECRET is not set, and no vault-service/projects.json above this script holds it"
+
 upload_file() {
   local file_path="$1"
   local platform_key="$2"
@@ -166,20 +191,11 @@ upload_file() {
 
   info "Uploading ${file_name} (${file_size_megabytes} MB) as ${platform_key}..."
 
-  # Authenticate the upload when a secret is available — an unauthenticated
-  # PUT here would let anyone replace the installers users download.
-  local auth_args=()
-  if [ -n "${WORKSPACE_SERVICE_SECRET:-}" ]; then
-    auth_args=(-H "x-api-secret: ${WORKSPACE_SERVICE_SECRET}")
-  else
-    warn "WORKSPACE_SERVICE_SECRET not set — uploading without auth header"
-  fi
-
   local http_status
   http_status=$(curl -s -o /dev/null -w "%{http_code}" \
     -X PUT \
     -H "Content-Type: application/octet-stream" \
-    "${auth_args[@]}" \
+    -H "x-api-secret: ${TOOLS_SECRET}" \
     --data-binary "@${file_path}" \
     --max-time 300 \
     "${TOOLS_API_URL}/agents/upload/tray-app?platform=${platform_key}")

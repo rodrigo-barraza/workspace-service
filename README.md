@@ -113,10 +113,11 @@ The standalone agent is a **Single Executable Application (SEA)** — a self-con
 
 ### Downloading
 
-The tools-service compiles and serves the standalone binary on demand:
+The tools-service compiles and serves the standalone binary on demand. The binary carries the agent secret, so the route answers only with tools-service's API secret (`TOOLS_SERVICE_API_SECRET`, from the vault) in `x-api-secret`; Prism's Settings download it through prism-service, which sends it:
 
 ```
 GET https://api.tools.rod.dev/agents/download/agent?platform=<platform>
+x-api-secret: <TOOLS_SERVICE_API_SECRET>
 ```
 
 | Platform | Value | Output |
@@ -130,7 +131,8 @@ Example:
 
 ```bash
 # Download the Windows binary
-curl -o workspace-agent.exe "https://api.tools.rod.dev/agents/download/agent?platform=win-x64"
+curl -H "x-api-secret: ${TOOLS_SERVICE_API_SECRET}" -o workspace-agent.exe \
+  "https://api.tools.rod.dev/agents/download/agent?platform=win-x64"
 ```
 
 > **Note:** The backend URL and API secret are pre-baked into the binary at compile time. No manual configuration of those values is needed.
