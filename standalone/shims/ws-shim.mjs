@@ -11,8 +11,10 @@
 // "message" carries ws's (data, isBinary).
 //
 // Differences from the real `ws` package:
-//   • Custom headers are NOT supported — authentication falls
-//     back to query-string (?secret=...) appended to the URL.
+//   • Custom headers (the x-api-secret the backend requires) go
+//     through the built-in WebSocket's init object, which Node 22+
+//     honours. Nothing goes in the URL: tools-service accepts the
+//     secret only as a header.
 //   • Protocol-level ping/pong is NOT available — .ping() is a
 //     no-op; heartbeat uses application-level agent.pong messages.
 //   • "unexpected-response" event is silently ignored.
@@ -28,17 +30,11 @@ class WebSocketShim extends EventEmitter {
     const protocols = hasProtocols ? protocolsOrOptions : undefined;
     const options = (hasProtocols ? maybeOptions : protocolsOrOptions) || {};
 
-    // The real `ws` package supports { headers: { "x-api-secret": "..." } }.
-    // Built-in WebSocket does not support custom headers, so we fall back to
-    // appending the secret as a query parameter on the URL.
     const headers = options.headers || {};
-    const apiSecret = headers["x-api-secret"];
-    if (apiSecret) {
-      const separator = url.includes("?") ? "&" : "?";
-      url = `${url}${separator}secret=${encodeURIComponent(apiSecret)}`;
-    }
-
-    this._socket = protocols === undefined ? new WebSocket(url) : new WebSocket(url, protocols);
+    this._socket = new WebSocket(url, {
+      ...(protocols === undefined ? {} : { protocols }),
+      headers,
+    });
     this._socket.binaryType = "arraybuffer";
     this._readyState = WebSocket.CONNECTING;
 

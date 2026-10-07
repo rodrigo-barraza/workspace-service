@@ -75,8 +75,9 @@ if (!backendUrl.includes("/ws/agent")) {
   backendUrl = backendUrl.replace(/\/+$/, "") + "/ws/agent";
 }
 
-// Resolve auth secret: explicit CLI flag wins; otherwise Settings page (MongoDB)
-let secret = cliOptions.secret || "";
+// Resolve auth secret: explicit CLI flag wins, then WORKSPACE_SERVICE_SECRET
+// (an environment variable stays out of `ps`), otherwise Settings page (MongoDB)
+let secret = cliOptions.secret || process.env.WORKSPACE_SERVICE_SECRET || "";
 if (!secret) {
   try {
     const { connectDatabase, disconnectDatabase } = await import("@rodrigo-barraza/utilities-library/service/mongo");
