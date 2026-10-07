@@ -12,19 +12,33 @@ import { join } from "node:path";
 
 import { FileHandler } from "../src/handlers/FileHandler.ts";
 import { CommandHandler } from "../src/handlers/CommandHandler.ts";
+import { TaskEngine } from "../src/handlers/TaskEngine.ts";
+import type { TaskNotification } from "../src/handlers/TaskEngine.ts";
 
 let workspaceRoot: string;
+let auxRoot: string;
 let fileHandler: FileHandler;
 let commandHandler: CommandHandler;
+let taskEngine: TaskEngine;
+const taskNotifications: TaskNotification[] = [];
 
 beforeAll(async () => {
   workspaceRoot = await mkdtemp(join(tmpdir(), "workspace-handler-test-"));
-  fileHandler = new FileHandler([workspaceRoot]);
-  commandHandler = new CommandHandler([workspaceRoot]);
+  // The task output area: outside the workspace, read-only for file tools
+  auxRoot = await mkdtemp(join(tmpdir(), "workspace-handler-aux-"));
+  fileHandler = new FileHandler([workspaceRoot], [auxRoot]);
+  taskEngine = new TaskEngine({
+    tasksDirectory: join(auxRoot, "tasks"),
+    env: () => ({ ...process.env }),
+    notify: (notification) => taskNotifications.push(notification),
+  });
+  commandHandler = new CommandHandler([workspaceRoot], taskEngine);
 });
 
 afterAll(async () => {
+  taskEngine.dispose();
   await rm(workspaceRoot, { recursive: true, force: true });
+  await rm(auxRoot, { recursive: true, force: true });
 });
 
 // ── stringReplace ───────────────────────────────────────────
@@ -196,6 +210,40 @@ describe("FileHandler.writeFile", () => {
   });
 });
 
+// ── Aux roots: task output is readable, never writable ─────
+
+describe("FileHandler aux roots (task output files)", () => {
+  it("reads, lists, stats and greps a file under an aux root outside the workspace", async () => {
+    const outputFile = join(auxRoot, "shell-abcdefgh.output");
+    await writeFile(outputFile, "build started\nbuild finished\n", "utf-8");
+
+    const read = await fileHandler.readFile({ path: outputFile });
+    expect(read).not.toHaveProperty("error");
+    expect((read as { content: string }).content).toContain("2: build finished");
+
+    const listing = await fileHandler.listDirectory({ path: auxRoot });
+    expect((listing as { entries: Array<{ name: string }> }).entries.map((entry) => entry.name)).toContain("shell-abcdefgh.output");
+
+    const info = await fileHandler.fileInfo({ paths: outputFile });
+    expect(info).toMatchObject({ exists: true, isFile: true });
+
+    const grep = await fileHandler.grepSearch({ pattern: "finished", searchPath: auxRoot });
+    expect((grep as { totalMatches: number }).totalMatches).toBe(1);
+  });
+
+  it("refuses every write there, whatever the containment says", async () => {
+    const target = join(auxRoot, "planted.txt");
+    const write = await fileHandler.writeFile({ path: target, content: "nope" });
+    expect((write as { error: string }).error).toContain("read-only");
+
+    const moved = await fileHandler.moveFile({ source: join(auxRoot, "shell-abcdefgh.output"), destination: join(workspaceRoot, "stolen.output") });
+    expect((moved as { error: string }).error).toContain("read-only");
+
+    const deleted = await fileHandler.deleteFile({ path: join(auxRoot, "shell-abcdefgh.output") });
+    expect((deleted as { error: string }).error).toContain("read-only");
+  });
+});
+
 // ── grep includes: real glob semantics ──────────────────────
 
 describe("FileHandler.grepSearch includes filter", () => {
@@ -287,18 +335,63 @@ describe("CommandHandler", () => {
     expect(grandchildAlive).toBe(false);
   }, 15_000);
 
-  it("refuses runInBackground honestly instead of blocking then killing", async () => {
+  it("SIGTERMs the group at the deadline, then SIGKILLs what ignored it — and reports the timeout", async () => {
+    // Children inherit the ignored SIGTERM: only the SIGKILL 2 s later stops them
     const start = Date.now();
     const result = await commandHandler.run({
-      command: "sleep 300",
+      command: 'trap "" TERM; sleep 300 & echo "GRANDCHILD_PID:$!"; wait',
+      cwd: workspaceRoot,
+      timeout: 1500,
+    });
+    const elapsed = Date.now() - start;
+
+    expect(result).toMatchObject({
+      success: false,
+      timedOut: true,
+      exitCode: null,
+      error: "Command timed out after 1500ms",
+    });
+    expect(elapsed).toBeGreaterThanOrEqual(3_000);
+    expect(elapsed).toBeLessThan(8_000);
+
+    const grandchildPid = parseInt(result.stdout.match(/GRANDCHILD_PID:(\d+)/)![1], 10);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    let grandchildAlive = true;
+    try {
+      process.kill(grandchildPid, 0);
+    } catch {
+      grandchildAlive = false;
+    }
+    expect(grandchildAlive).toBe(false);
+  }, 15_000);
+
+  it("runInBackground starts a shell task and answers at once with its id and output file", async () => {
+    const start = Date.now();
+    const result = await commandHandler.run({
+      command: "sleep 1; echo background-done",
       cwd: workspaceRoot,
       runInBackground: true,
+      description: "Sleep then echo",
     });
-    // Must return immediately, not run to any timeout
     expect(Date.now() - start).toBeLessThan(1000);
-    expect(result.success).toBe(false);
-    expect(result.error).toContain("Background execution is not supported");
-  });
+    expect(result).toMatchObject({ success: true, backgrounded: true, exitCode: null, stdout: "", stderr: "" });
+
+    const { taskId, outputFile, message } = result as { taskId: string; outputFile: string; message: string };
+    expect(taskId).toMatch(/^shell-[0-9a-z]{8}$/);
+    expect(outputFile).toBe(join(auxRoot, "tasks", `${taskId}.output`));
+    expect(message).toBe(`Command running in background with ID: ${taskId}. Output is being written to: ${outputFile}`);
+    expect(taskEngine.list().find((entry) => entry.taskId === taskId)?.description).toBe("Sleep then echo");
+
+    // …and its end arrives as a task.exit notification
+    const deadline = Date.now() + 5_000;
+    while (!taskNotifications.some((notification) => notification.method === "task.exit" && notification.params.taskId === taskId)) {
+      if (Date.now() > deadline) throw new Error("no task.exit");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    const exit = taskNotifications.find((notification) => notification.method === "task.exit" && notification.params.taskId === taskId)!;
+    expect(exit.params).toMatchObject({ status: "completed", exitCode: 0 });
+    expect(await readFile(outputFile, "utf-8")).toBe("background-done\n");
+  }, 10_000);
 
   it("strips credential-shaped env vars from spawned commands", async () => {
     process.env.WORKSPACE_TEST_FAKE_SECRET = "leak-me";

@@ -4,16 +4,21 @@
 // The container filesystem is the jail; nothing escapes it.
 
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
 import path from "node:path";
 import type { CommandRunParams, NotifyFn } from "../types.ts";
+import {
+  KILL_GRACE_MS,
+  backgroundCommandResult,
+  clampCommandTimeout,
+  resolveShell,
+  terminateProcessGroup,
+} from "./TaskEngine.ts";
+import type { BackgroundCommandResult, TaskEngine } from "./TaskEngine.ts";
 
 // ────────────────────────────────────────────────────────────
 // Constants
 // ────────────────────────────────────────────────────────────
 
-const DEFAULT_TIMEOUT_MS = 60_000;
-const MAX_TIMEOUT_MS = 120_000;
 const MAX_OUTPUT_BYTES = 512 * 1024;
 
 // Env vars that must never leak into LLM-run commands (`env` would dump them).
@@ -21,7 +26,8 @@ const MAX_OUTPUT_BYTES = 512 * 1024;
 const BLOCKED_ENV_NAMES = new Set(["MONGO_URI", "WORKSPACE_SERVICE_SECRET", "AGENT_SECRET"]);
 const BLOCKED_ENV_PATTERN = /(SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIALS?|PRIVATE_KEY|API_KEY)$/i;
 
-function sanitizedChildEnv(): NodeJS.ProcessEnv {
+/** This process's environment minus credentials — what commands, tasks and hooks run with. */
+export function sanitizedChildEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [name, value] of Object.entries(process.env)) {
     if (BLOCKED_ENV_NAMES.has(name) || BLOCKED_ENV_PATTERN.test(name)) continue;
@@ -31,37 +37,6 @@ function sanitizedChildEnv(): NodeJS.ProcessEnv {
   env.FORCE_COLOR = "0";
   env.NO_COLOR = "1";
   return env;
-}
-
-// Shell resolution: prefer the Docker image's bash, fall back for host
-// installs (standalone/tray agents on macOS, Windows, non-Debian Linux).
-function resolveShell(command: string): { executable: string; args: string[] } {
-  if (process.platform === "win32") {
-    const comSpec = process.env.ComSpec || "cmd.exe";
-    return { executable: comSpec, args: ["/d", "/s", "/c", command] };
-  }
-  const bashPath = existsSync("/usr/bin/bash") ? "/usr/bin/bash" : "bash";
-  return { executable: bashPath, args: ["-l", "-c", command] };
-}
-
-/**
- * Kill a spawned command and all of its descendants. The child is spawned
- * `detached` so it leads its own process group — signalling the negative pid
- * reaches grandchildren (`npm run dev` etc.), which a bare child.kill() never
- * does, leaving orphans running against the container memory cap.
- */
-function killProcessTree(child: ReturnType<typeof spawn>): void {
-  if (child.pid === undefined) return;
-  try {
-    process.kill(-child.pid, "SIGKILL");
-  } catch {
-    // No process group (Windows / already-dead group) — best-effort direct kill
-    try {
-      child.kill("SIGKILL");
-    } catch {
-      // Already gone
-    }
-  }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -86,45 +61,56 @@ interface CommandResult {
 
 export class CommandHandler {
   roots: string[];
-  constructor(roots: string[]) {
+  taskEngine: TaskEngine | null;
+  constructor(roots: string[], taskEngine: TaskEngine | null = null) {
     this.roots = roots;
+    this.taskEngine = taskEngine;
   }
 
   /**
    * Execute a command inside the container.
    * No restrictions — the container boundary is the jail.
    */
-  async run(params: CommandRunParams): Promise<CommandResult> {
+  async run(params: CommandRunParams): Promise<CommandResult | BackgroundCommandResult> {
     return this._execute(params, undefined);
   }
 
   /**
    * Streaming variant — sends chunked notifications during execution.
    */
-  async runStreaming(params: CommandRunParams, notify: NotifyFn): Promise<CommandResult> {
+  async runStreaming(params: CommandRunParams, notify: NotifyFn): Promise<CommandResult | BackgroundCommandResult> {
     return this._execute(params, notify);
   }
 
-  private async _execute({ command, cwd, timeout = DEFAULT_TIMEOUT_MS, runInBackground = false }: CommandRunParams, notify: NotifyFn | undefined): Promise<CommandResult> {
-    const clampedTimeout = Math.min(Math.max(timeout, 1000), MAX_TIMEOUT_MS);
+  private async _execute(
+    { command, cwd, timeout, runInBackground = false, description, owner }: CommandRunParams,
+    notify: NotifyFn | undefined,
+  ): Promise<CommandResult | BackgroundCommandResult> {
+    // Claude Code's Bash: default 120 s, at most 600 s, then the group is killed
+    const clampedTimeout = clampCommandTimeout(timeout);
 
     if (!command || typeof command !== "string") {
       return { success: false, stdout: "", stderr: "", exitCode: null, executionTimeMs: 0, error: "Command is required (string)" };
     }
 
-    // The local tools-service supports run_in_background via a process registry.
-    // This remote agent has none: a "backgrounded" command would just run to the
-    // timeout and then be SIGKILLed, silently losing the process. Refuse honestly
-    // instead of pretending to background it.
+    const workingDirectory = cwd ? path.resolve(this.roots[0] ?? "/", cwd) : this.roots[0];
+
+    // run_in_background: a shell task — detached, no time limit, its output
+    // in a file, and a task.exit notification when it ends
     if (runInBackground) {
-      return {
-        success: false,
-        stdout: "",
-        stderr: "",
-        exitCode: null,
-        executionTimeMs: 0,
-        error: "Background execution is not supported on this remote workspace agent; the command would be killed at the timeout. Run without run_in_background, or run it on the local workspace.",
-      };
+      if (!this.taskEngine) {
+        return { success: false, stdout: "", stderr: "", exitCode: null, executionTimeMs: 0, error: "Background tasks are not available on this workspace agent" };
+      }
+      try {
+        return backgroundCommandResult(
+          this.taskEngine.start({ kind: "shell", command, cwd: workingDirectory, description, owner }),
+        );
+      } catch (error: unknown) {
+        return {
+          success: false, stdout: "", stderr: "", exitCode: null, executionTimeMs: 0,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
     }
 
     const startTime = performance.now();
@@ -139,9 +125,10 @@ export class CommandHandler {
       let stderrTruncated = false;
       let timedOut = false;
       let settled = false;
+      let forceCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
       const child = spawn(shell.executable, shell.args, {
-        cwd: cwd ? path.resolve(cwd) : this.roots[0],
+        cwd: workingDirectory,
         stdio: ["pipe", "pipe", "pipe"],
         env: sanitizedChildEnv(),
         // Own process group so a timeout can kill the whole tree
@@ -174,18 +161,22 @@ export class CommandHandler {
         notify?.("command.stderr", { data: chunk.toString("utf-8") });
       });
 
+      // At the deadline: SIGTERM the group, SIGKILL it 2 s later. Never backgrounded.
       const timer = setTimeout(() => {
         timedOut = true;
-        killProcessTree(child);
-        // Unblock `close` even if some descendant inherited our stdio pipes
-        child.stdout?.destroy();
-        child.stderr?.destroy();
+        terminateProcessGroup(child);
+        // Unblock `close` even if some descendant outside the group inherited our pipes
+        forceCloseTimer = setTimeout(() => {
+          child.stdout?.destroy();
+          child.stderr?.destroy();
+        }, KILL_GRACE_MS + 500);
       }, clampedTimeout);
 
       function finish(exitCode: number | null) {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        if (forceCloseTimer) clearTimeout(forceCloseTimer);
 
         const stdout = Buffer.concat(stdoutChunks).toString("utf-8");
         const stderr = Buffer.concat(stderrChunks).toString("utf-8");
@@ -209,6 +200,7 @@ export class CommandHandler {
         if (!settled) {
           settled = true;
           clearTimeout(timer);
+          if (forceCloseTimer) clearTimeout(forceCloseTimer);
           resolve({
             success: false, stdout: "", stderr: "", exitCode: null,
             executionTimeMs: Math.round(performance.now() - startTime),

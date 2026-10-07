@@ -9,9 +9,21 @@ import { resolve } from "node:path";
 import logger from "./logger.ts";
 import { FileHandler } from "./handlers/FileHandler.ts";
 import { GitHandler } from "./handlers/GitHandler.ts";
-import { CommandHandler } from "./handlers/CommandHandler.ts";
+import { CommandHandler, sanitizedChildEnv } from "./handlers/CommandHandler.ts";
 import { ProjectHandler } from "./handlers/ProjectHandler.ts";
-import type { AgentClientOptions, RpcHandler, JsonRpcRequest, WatchParams } from "./types.ts";
+import { HookHandler } from "./handlers/HookHandler.ts";
+import { TaskEngine, prismTempRoot } from "./handlers/TaskEngine.ts";
+import type { TaskStartParams } from "./handlers/TaskEngine.ts";
+import type {
+  AgentClientOptions,
+  RpcHandler,
+  JsonRpcRequest,
+  WatchParams,
+  TaskIdParams,
+  HookRunParams,
+  HooksConfigParams,
+  TranscriptAppendParams,
+} from "./types.ts";
 import { errorMessage } from "@rodrigo-barraza/utilities-library";
 import { AUTH_HEADERS } from "@rodrigo-barraza/utilities-library/taxonomy";
 import {
@@ -42,6 +54,8 @@ export class AgentClient extends EventEmitter {
   backendUrl: string;
   roots: string[];
   virtualRoots: string[];
+  // Read-only: task output files and transcripts (`<tmp>/prism-<uid>`)
+  auxRoots: string[];
   name: string;
   secret: string;
   reconnectInterval: number;
@@ -67,6 +81,8 @@ export class AgentClient extends EventEmitter {
   gitHandler: GitHandler;
   commandHandler: CommandHandler;
   projectHandler: ProjectHandler;
+  hookHandler: HookHandler;
+  taskEngine: TaskEngine;
   methodMap: Map<string, RpcHandler>;
 
   constructor({ backendUrl, roots, name, secret, reconnectInterval = 5000 }: AgentClientOptions) {
@@ -76,6 +92,7 @@ export class AgentClient extends EventEmitter {
     // The virtual roots are what the LLM / tools-service see.
     // The actual roots (this.roots) are used internally by handlers.
     this.virtualRoots = [WORKSPACE_VIRTUAL_ROOT];
+    this.auxRoots = [prismTempRoot()];
     this.name = name;
     this.secret = secret;
     this.reconnectInterval = reconnectInterval;
@@ -92,11 +109,20 @@ export class AgentClient extends EventEmitter {
 
     this.watchers = new Map();
 
+    // Background shells and monitors (Claude Code's background Bash + Monitor):
+    // each task.event / task.exit goes out as a notification
+    this.taskEngine = new TaskEngine({
+      notify: ({ method, params }) => this._sendNotification(method, params as unknown as Record<string, unknown>),
+      env: () => sanitizedChildEnv(),
+      log: (level, message) => logger[level](message),
+    });
+
     // Initialize handlers
-    this.fileHandler = new FileHandler(roots);
+    this.fileHandler = new FileHandler(roots, this.auxRoots);
     this.gitHandler = new GitHandler(roots);
-    this.commandHandler = new CommandHandler(roots);
+    this.commandHandler = new CommandHandler(roots, this.taskEngine);
     this.projectHandler = new ProjectHandler(roots);
+    this.hookHandler = new HookHandler(roots);
 
     this.methodMap = new Map<string, RpcHandler>([
       // File operations
@@ -128,7 +154,23 @@ export class AgentClient extends EventEmitter {
 
       // Command execution
       ["command.run", (rpcParams) => this.commandHandler.run(rpcParams as unknown as Parameters<CommandHandler["run"]>[0])],
-      ["command.stream", (rpcParams) => this.commandHandler.runStreaming(rpcParams as unknown as Parameters<CommandHandler["runStreaming"]>[0], (event: string, data: Record<string, unknown>) => this._sendNotification(event, data))],
+      // Output notifications name the request they belong to, so the server can
+      // tell concurrent streams apart
+      ["command.stream", (rpcParams, requestId) => this.commandHandler.runStreaming(rpcParams as unknown as Parameters<CommandHandler["runStreaming"]>[0], (event: string, data: Record<string, unknown>) => this._sendNotification(event, { ...data, requestId }))],
+
+      // Background tasks
+      ["task.start", (rpcParams) => this._startTask(rpcParams as unknown as TaskStartParams)],
+      ["task.stop", (rpcParams) => this.taskEngine.stop(String((rpcParams as unknown as TaskIdParams).taskId ?? ""))],
+      ["task.list", () => this.taskEngine.list()],
+      ["task.events", (rpcParams) => {
+        const { taskId, afterSeq } = rpcParams as unknown as TaskIdParams;
+        return this.taskEngine.events(String(taskId ?? ""), Number(afterSeq ?? 0));
+      }],
+
+      // Repository hooks + Claude-shaped transcripts
+      ["hook.run", (rpcParams) => this.hookHandler.run(rpcParams as unknown as HookRunParams)],
+      ["hooks.config", (rpcParams) => this.hookHandler.config(rpcParams as unknown as HooksConfigParams)],
+      ["transcript.append", (rpcParams) => this.hookHandler.appendTranscript(rpcParams as unknown as TranscriptAppendParams)],
 
       // Project intelligence
       ["project.summary", (rpcParams) => this.projectHandler.summary(rpcParams as unknown as Parameters<ProjectHandler["summary"]>[0])],
@@ -255,6 +297,8 @@ export class AgentClient extends EventEmitter {
     this.intentionalClose = true;
     this._stopHeartbeat();
     this._unwatchAll();
+    // Nobody would hear their notifications any more
+    this.taskEngine.dispose();
 
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -304,7 +348,9 @@ export class AgentClient extends EventEmitter {
         name: this.name,
         roots: this.virtualRoots,
         ...(isDockerMount ? {} : { displayRoots: this.roots }),
-        capabilities: ["file", "git", "command", "project"],
+        // Reads only (task output, transcripts) — never a workspace
+        auxRoots: this.auxRoots,
+        capabilities: ["file", "git", "command", "project", "tasks", "hooks", "transcripts"],
         machineInfo: {
           hostname: os.hostname(),
           platform: os.platform(),
@@ -360,7 +406,7 @@ export class AgentClient extends EventEmitter {
       try {
         // Devirtualize incoming paths: "/src/foo.ts" → "/workspace/src/foo.ts"
         const translatedParams = devirtualizeRequestParams(message.params || {});
-        const result = await handler(translatedParams as Record<string, unknown>);
+        const result = await handler(translatedParams as Record<string, unknown>, message.id);
         // Virtualize outgoing paths: "/workspace/src/foo.ts" → "/src/foo.ts"
         const translatedResult = virtualizeResponsePaths(result);
         this._sendResponse(message.id, translatedResult, undefined);
@@ -380,6 +426,19 @@ export class AgentClient extends EventEmitter {
       logger.debug(`Received response for ${message.id}`);
       return;
     }
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // Background Tasks
+  // ──────────────────────────────────────────────────────────
+
+  /** task.start — a relative cwd is the workspace's, as for every other path. */
+  _startTask(params: TaskStartParams) {
+    const cwd = typeof params.cwd === "string" && params.cwd.trim() ? params.cwd.trim() : undefined;
+    return this.taskEngine.start({
+      ...params,
+      ...(cwd !== undefined && { cwd: resolve(this.roots[0] ?? "/", cwd) }),
+    });
   }
 
   // ──────────────────────────────────────────────────────────

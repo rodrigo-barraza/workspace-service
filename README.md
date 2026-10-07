@@ -288,8 +288,20 @@ Uses JSON-RPC 2.0 over WebSocket. The agent responds to the following RPC method
 - `git.log` — Commit history
 
 ### Commands
-- `command.run` — Execute allowlisted shell command
-- `command.stream` — Execute with streaming output
+- `command.run` — Run a shell command (`bash -l -c`). `timeout` in ms: default 120000, max 600000; past it the process group gets SIGTERM, then SIGKILL 2 s later, and the result says `timedOut`. `runInBackground: true` starts a shell task instead and answers at once with its `taskId` and `outputFile`
+- `command.stream` — Same, with `command.stdout` / `command.stderr` notifications tagged with the request's `requestId`
+
+### Background tasks (Claude Code's background Bash and Monitor)
+- `task.start` — `{kind: "shell"|"monitor", command | ws:{url, protocols}, cwd, description, timeoutMs, owner}`. A shell writes stdout+stderr to `<tmp>/prism-<uid>/tasks/<taskId>.output` with no time limit. A monitor turns stdout lines (or WebSocket frames) into `task.event` notifications, batching what arrives within 200 ms; stderr only reaches the output file. Monitors default to a 300 s deadline (max 1800 s) and are stopped past 30 events in 10 s or 300 in 10 min
+- `task.stop` · `task.list` · `task.events {taskId, afterSeq}` (replay of the last 500 notifications)
+- Notifications: `task.event {taskId, seq, lines, at}` and one `task.exit {taskId, seq, status, exitCode, signal, eventCount, outputFile, outputTail, …}`
+
+The engine (`src/handlers/TaskEngine.ts`, with `WorkspaceHooks.ts`) is shared byte-for-byte with tools-service, which runs it for paths no agent serves; `tests/taskEngineSync.test.ts` fails when the copies differ.
+
+### Repository hooks and transcripts
+- `hook.run` — `{command, cwd, stdin, env, timeoutMs}` → `{exitCode, stdout, stderr, timedOut, durationMs}`: `bash -c` in `cwd` (under a registered root), this process's environment minus credentials plus `env`'s upper-case string variables; the group is killed at the deadline; 64 KB of output each
+- `hooks.config` — `{root}` → the nearest `.prism/hooks.json` at or above `root` (never above its registered root) and `~/.prism/hooks.json`, each `{path, dir, exists, content, sha256}` or null
+- `transcript.append` — `{conversationId, lines}` → appends Claude Code-shaped JSONL to `<tmp>/prism-<uid>/transcripts/<conversationId>.jsonl`
 
 ### Project
 - `project.summary` — Directory tree analysis
@@ -297,6 +309,7 @@ Uses JSON-RPC 2.0 over WebSocket. The agent responds to the following RPC method
 ## Security
 
 - **Path containment**: On host installs (tray app, standalone binary, bare Node), file/git/watch operations are restricted to the registered workspace roots (`WORKSPACE_CONTAINMENT`, default on). Inside Docker the container itself is the jail and containment defaults to off.
+- **Aux root**: `<tmp>/prism-<uid>` (task output and transcripts) is registered as `auxRoots`, never as a workspace. File reads may reach it; file writes there are always refused.
 - **Command execution**: `command.run` is unrestricted by design — on Docker the container is the boundary; on host installs treat the backend as trusted (it can run shell commands as your user).
 - **Secret env stripping**: `command.run` children never inherit credential-shaped env vars (`MONGO_URI`, `*_SECRET`, `*_TOKEN`, `*_PASSWORD`, `*_API_KEY`, …)
 - **Auth**: WebSocket connection authenticates with `x-api-secret` header; a 401 latches with an explicit `auth-failed` state instead of retry-looping
