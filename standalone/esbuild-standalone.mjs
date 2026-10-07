@@ -17,13 +17,15 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 import { build } from "esbuild";
-import { resolve, dirname } from "node:path";
+import { resolve, dirname, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(currentDirectory, "..");
+// This checkout's own sources, wherever it stands (a worktree included).
+const sourceDirectory = resolve(projectRoot, "src") + sep;
 
 // Deterministic build identity: same source → same bundle bytes.
 // A timestamp here would dirty git on every rebuild with zero source change.
@@ -57,7 +59,7 @@ const aliasPlugin = {
     // Replace `import logger from "../logger.ts"` (any depth) with injectable shim
     pluginBuild.onResolve({ filter: /logger\.ts$/ }, (arguments_) => {
       // Only intercept the workspace-service logger, not other loggers
-      if (arguments_.importer.includes("workspace-service/src")) {
+      if (arguments_.importer.startsWith(sourceDirectory)) {
         return { path: loggerShimPath };
       }
       return undefined;
@@ -95,6 +97,9 @@ const aliasPlugin = {
 try {
   const result = await build({
     entryPoints: [entryPoint],
+    // Module comments name paths from the project root, not the caller's
+    // directory, so the bundle reads the same from any checkout.
+    absWorkingDir: projectRoot,
     bundle: true,
     format: "esm",
     platform: "node",
